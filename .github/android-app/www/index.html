@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#09090d">
+  <title>Sonora</title>
+  <style>
+    :root { --bg:#09090d; --surface:#15151d; --surface2:#1d1d29; --line:rgba(255,255,255,.08); --text:#f5f5f8; --muted:#a2a2b6; --danger:#ff5c6c; --grad:linear-gradient(135deg,#ff8a3d,#ff3d81); }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 400 15px/1.45 Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-font-smoothing: antialiased; }
+    body { display: grid; place-items: center; padding: max(20px, env(safe-area-inset-top)) 20px max(20px, env(safe-area-inset-bottom)); background: radial-gradient(80% 55% at 50% 0%, rgba(255,106,61,.16), transparent 70%), var(--bg); }
+    main { width: 100%; max-width: 380px; text-align: center; }
+    .logo { width: 84px; height: 84px; border-radius: 24px; margin: 0 auto 16px; box-shadow: 0 14px 40px rgba(255,90,80,.32); }
+    h1 { margin: 0; font-size: 32px; font-weight: 800; letter-spacing: -.03em; }
+    .sub { margin: 4px 0 26px; color: var(--muted); }
+    .card { padding: 22px 20px 20px; border-radius: 24px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line), 0 24px 70px rgba(0,0,0,.45); text-align: left; }
+    label { display: block; font-size: 13px; font-weight: 600; color: var(--muted); margin-bottom: 7px; }
+    input { width: 100%; height: 50px; padding: 0 16px; border: 0; border-radius: 14px; background: var(--surface2); color: var(--text); font: inherit; outline: none; box-shadow: inset 0 0 0 1px var(--line); }
+    input:focus { box-shadow: inset 0 0 0 1.5px #ff6a3d; }
+    button { width: 100%; height: 52px; margin-top: 14px; border: 0; border-radius: 999px; background: var(--grad); color: #1c0a06; font: 700 16px/1 inherit; cursor: pointer; touch-action: manipulation; }
+    button:active { transform: scale(.97); filter: brightness(.92); }
+    button[disabled] { opacity: .6; }
+    .help { margin: 16px 2px 0; font-size: 13px; color: var(--muted); }
+    .error { margin: 12px 2px 0; font-size: 14px; color: var(--danger); }
+    .spin { width: 34px; height: 34px; margin: 0 auto 14px; border-radius: 50%; border: 3px solid rgba(255,255,255,.12); border-top-color: #ff6a3d; animation: spin .8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+<main>
+  <svg class="logo" viewBox="0 0 512 512" aria-hidden="true">
+    <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff8a3d"/><stop offset="1" stop-color="#ff3d81"/></linearGradient></defs>
+    <rect width="512" height="512" rx="112" fill="url(#g)"/>
+    <g fill="#fff" fill-opacity=".96">
+      <rect x="109" y="179" width="38" height="154" rx="19"/><rect x="173" y="123" width="38" height="266" rx="19"/>
+      <rect x="237" y="67" width="38" height="379" rx="19"/><rect x="301" y="138" width="38" height="236" rx="19"/>
+      <rect x="365" y="190" width="38" height="133" rx="19"/>
+    </g>
+  </svg>
+  <h1>Sonora</h1>
+
+  <section id="connecting" hidden>
+    <p class="sub">Conectando con tu servidor…</p>
+    <div class="spin"></div>
+  </section>
+
+  <section id="setup" hidden>
+    <p class="sub">Tu música, sin anuncios.</p>
+    <form class="card" id="form">
+      <label for="addr">Dirección de tu servidor Sonora</label>
+      <input id="addr" inputmode="url" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="192.168.1.25:3000">
+      <p class="error" id="error" role="alert" hidden></p>
+      <button type="submit" id="go">Conectar</button>
+      <p class="help">Es la dirección que aparece en la ventana de Sonora en tu computadora, por ejemplo <b>http://192.168.1.25:3000</b>. El celular debe estar en el mismo Wi-Fi (o conectado por Tailscale).</p>
+    </form>
+  </section>
+</main>
+
+<script>
+  var KEY = 'sonora.server';
+  var $ = function (id) { return document.getElementById(id); };
+  var params = new URLSearchParams(location.search);
+  var saved = '';
+  try { saved = localStorage.getItem(KEY) || ''; } catch (e) {}
+
+  function normalize(value) {
+    value = (value || '').trim();
+    if (!value) return '';
+    if (!/^https?:\/\//i.test(value)) value = 'http://' + value;
+    return value.replace(/\/+$/, '');
+  }
+
+  // Comprueba que el servidor responda (cualquier respuesta HTTP cuenta).
+  function reachable(url) {
+    var ctrl = new AbortController();
+    var timer = setTimeout(function () { ctrl.abort(); }, 7000);
+    return fetch(url + '/api/session', { mode: 'no-cors', cache: 'no-store', signal: ctrl.signal })
+      .then(function () { return true; }, function () { return false; })
+      .then(function (ok) { clearTimeout(timer); return ok; });
+  }
+
+  function show(which, message) {
+    $('connecting').hidden = which !== 'connecting';
+    $('setup').hidden = which !== 'setup';
+    var err = $('error');
+    err.hidden = !message;
+    err.textContent = message || '';
+  }
+
+  function open(url) {
+    try { localStorage.setItem(KEY, url); } catch (e) {}
+    location.replace(url + '/');
+  }
+
+  $('form').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var url = normalize($('addr').value);
+    if (!url) { show('setup', 'Escribe la dirección de tu servidor.'); return; }
+    $('go').disabled = true;
+    $('go').textContent = 'Conectando…';
+    reachable(url).then(function (ok) {
+      $('go').disabled = false;
+      $('go').textContent = 'Conectar';
+      if (ok) open(url);
+      else show('setup', 'No se pudo conectar. Revisa que Sonora esté encendida en tu computadora y que el celular esté en el mismo Wi-Fi.');
+    });
+  });
+
+  if (saved && !params.has('cambiar')) {
+    show('connecting');
+    reachable(saved).then(function (ok) {
+      if (ok) { open(saved); return; }
+      $('addr').value = saved.replace(/^https?:\/\//, '');
+      show('setup', 'No se pudo conectar con ' + saved + '. Revisa que Sonora esté encendida y que estés en la misma red.');
+    });
+  } else {
+    $('addr').value = saved.replace(/^https?:\/\//, '');
+    show('setup');
+  }
+</script>
+</body>
+</html>

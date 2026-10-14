@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#09090d">
+  <meta name="description" content="Sonora: tu música, sin anuncios.">
+  <title>Sonora</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Sonora">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+<!-- Iconos -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-play" viewBox="0 0 24 24"><polygon points="6 4 20 12 6 20 6 4"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></symbol>
+  <symbol id="i-next" viewBox="0 0 24 24"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/></symbol>
+  <symbol id="i-prev" viewBox="0 0 24 24"><polygon points="19 20 9 12 19 4 19 20"/><line x1="5" y1="19" x2="5" y2="5"/></symbol>
+  <symbol id="i-shuffle" viewBox="0 0 24 24"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></symbol>
+  <symbol id="i-repeat" viewBox="0 0 24 24"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></symbol>
+  <symbol id="i-heart" viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></symbol>
+  <symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></symbol>
+  <symbol id="i-disc" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></symbol>
+  <symbol id="i-chevron-down" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></symbol>
+  <symbol id="i-chevron-left" viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></symbol>
+  <symbol id="i-volume" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></symbol>
+  <symbol id="i-mute" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></symbol>
+  <symbol id="i-logout" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></symbol>
+</svg>
+
+<!-- Inicio de sesión -->
+<main id="login" class="login" hidden>
+  <form id="loginForm" class="login-card" autocomplete="on">
+    <div class="logo-mark big"><img src="/icons/icon.svg" alt=""></div>
+    <h1>Sonora</h1>
+    <p class="muted">Tu música, sin anuncios.</p>
+    <label class="field">
+      <span>Contraseña</span>
+      <input id="loginPass" type="password" name="password" autocomplete="current-password" required autofocus>
+    </label>
+    <p id="loginError" class="form-error" role="alert" hidden></p>
+    <button class="btn primary lg block" type="submit">Entrar</button>
+  </form>
+</main>
+
+<!-- Aplicación -->
+<div id="app" hidden>
+  <aside class="sidebar">
+    <div class="brand"><span class="logo-mark"><img src="/icons/icon.svg" alt=""></span><span class="brand-name">Sonora</span></div>
+    <nav class="nav" aria-label="Principal">
+      <button class="nav-item" data-nav="songs"><svg class="i" aria-hidden="true"><use href="#i-music"/></svg>Canciones</button>
+      <button class="nav-item" data-nav="albums"><svg class="i" aria-hidden="true"><use href="#i-disc"/></svg>Álbumes</button>
+      <button class="nav-item" data-nav="favorites"><svg class="i" aria-hidden="true"><use href="#i-heart"/></svg>Favoritas</button>
+      <button class="nav-item" data-nav="playlists"><svg class="i" aria-hidden="true"><use href="#i-list"/></svg>Listas</button>
+    </nav>
+    <button class="btn primary block" data-nav="upload"><svg class="i" aria-hidden="true"><use href="#i-upload"/></svg>Subir música</button>
+    <div class="side-lists" id="sideLists"></div>
+    <div class="side-foot">
+      <span id="sideStats" class="muted small"></span>
+      <button id="logoutBtn" class="icon-btn" title="Cerrar sesión" aria-label="Cerrar sesión" hidden><svg class="i" aria-hidden="true"><use href="#i-logout"/></svg></button>
+    </div>
+  </aside>
+
+  <main class="main" id="main">
+    <header class="topbar">
+      <div class="brand-m"><span class="logo-mark"><img src="/icons/icon.svg" alt=""></span><span class="brand-name">Sonora</span></div>
+      <label class="search">
+        <svg class="i" aria-hidden="true"><use href="#i-search"/></svg>
+        <input id="q" type="search" placeholder="Buscar canciones, artistas o álbumes" autocomplete="off" enterkeyhint="search" aria-label="Buscar">
+      </label>
+    </header>
+    <section id="view" class="view" aria-live="polite"></section>
+  </main>
+
+  <nav class="tabbar" aria-label="Principal">
+    <button data-nav="songs"><svg class="i" aria-hidden="true"><use href="#i-music"/></svg><span>Canciones</span></button>
+    <button data-nav="albums"><svg class="i" aria-hidden="true"><use href="#i-disc"/></svg><span>Álbumes</span></button>
+    <button data-nav="upload" class="tab-upload" aria-label="Subir música"><span class="tab-plus"><svg class="i" aria-hidden="true"><use href="#i-plus"/></svg></span></button>
+    <button data-nav="favorites"><svg class="i" aria-hidden="true"><use href="#i-heart"/></svg><span>Favoritas</span></button>
+    <button data-nav="playlists"><svg class="i" aria-hidden="true"><use href="#i-list"/></svg><span>Listas</span></button>
+  </nav>
+
+  <footer class="bar" id="bar" hidden>
+    <div class="bar-progress" id="miniProg"><i></i></div>
+    <button class="bar-track" id="barOpen" aria-label="Abrir reproductor">
+      <span id="barCover" class="cover-slot"></span>
+      <span class="meta"><span class="t" id="barTitle"></span><span class="s" id="barArtist"></span></span>
+    </button>
+    <div class="bar-center">
+      <div class="ctrls">
+        <button class="icon-btn desk js-shuffle" data-player="shuffle" aria-label="Aleatorio"></button>
+        <button class="icon-btn desk js-prev" data-player="prev" aria-label="Anterior"></button>
+        <button class="play-btn js-play" data-player="toggle"></button>
+        <button class="icon-btn js-next" data-player="next" aria-label="Siguiente"></button>
+        <button class="icon-btn desk js-repeat" data-player="repeat" aria-label="Repetir"></button>
+      </div>
+      <div class="seek desk">
+        <span class="js-cur">0:00</span>
+        <input class="js-seek" type="range" min="0" max="1000" value="0" aria-label="Posición">
+        <span class="js-dur">0:00</span>
+      </div>
+    </div>
+    <div class="bar-right desk">
+      <button class="icon-btn js-fav" data-player="fav" aria-label="Favorita"></button>
+      <button class="icon-btn" id="muteBtn" aria-label="Silenciar"></button>
+      <input id="vol" type="range" min="0" max="100" value="100" aria-label="Volumen">
+      <button class="icon-btn" id="barExpand" aria-label="Pantalla completa del reproductor"><svg class="i" aria-hidden="true"><use href="#i-chevron-down" style="transform:rotate(180deg);transform-origin:center"/></svg></button>
+    </div>
+  </footer>
+
+  <section class="np" id="np" aria-label="Reproduciendo" aria-hidden="true">
+    <div class="np-top">
+      <button class="icon-btn lg" id="npClose" aria-label="Cerrar"><svg class="i" aria-hidden="true"><use href="#i-chevron-down"/></svg></button>
+      <span class="np-label">Reproduciendo</span>
+      <button class="icon-btn lg" id="npMore" aria-label="Más opciones"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></button>
+    </div>
+    <div class="np-inner">
+      <div class="np-main">
+        <div class="np-art" id="npArt"></div>
+        <div class="np-info">
+          <div class="meta"><span class="t" id="npTitle"></span><span class="s" id="npArtist"></span></div>
+          <button class="icon-btn lg js-fav" data-player="fav" aria-label="Favorita"></button>
+        </div>
+        <div class="seek np-seek">
+          <input class="js-seek" type="range" min="0" max="1000" value="0" aria-label="Posición">
+          <div class="times"><span class="js-cur">0:00</span><span class="js-dur">0:00</span></div>
+        </div>
+        <div class="ctrls big">
+          <button class="icon-btn js-shuffle" data-player="shuffle" aria-label="Aleatorio"></button>
+          <button class="icon-btn js-prev" data-player="prev" aria-label="Anterior"></button>
+          <button class="play-btn xl js-play" data-player="toggle"></button>
+          <button class="icon-btn js-next" data-player="next" aria-label="Siguiente"></button>
+          <button class="icon-btn js-repeat" data-player="repeat" aria-label="Repetir"></button>
+        </div>
+      </div>
+      <aside class="upnext" id="upnext"></aside>
+    </div>
+  </section>
+</div>
+
+<audio id="audio" preload="metadata"></audio>
+<input type="file" id="filePicker" multiple hidden accept="audio/*,.mp3,.m4a,.aac,.flac,.ogg,.oga,.opus,.wav">
+<div id="dropVeil" class="drop-veil" hidden><div><svg class="i" aria-hidden="true"><use href="#i-upload"/></svg><p>Suelta tus canciones para subirlas</p></div></div>
+<div id="toasts" class="toasts" aria-live="polite"></div>
+<dialog id="sheet" class="sheet"></dialog>
+
+<noscript><p style="padding:24px;color:#fff">Sonora necesita JavaScript para funcionar.</p></noscript>
+<script type="module" src="/app.js"></script>
+</body>
+</html>

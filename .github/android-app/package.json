@@ -1,0 +1,18 @@
+{
+  "name": "sonora-android",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Sonora para Android (APK): se conecta a tu servidor Sonora",
+  "scripts": {
+    "preparar": "node scripts/preparar.mjs",
+    "sync": "cap sync android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.5.3",
+    "@capacitor/core": "^8.5.3"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^8.5.3"
+  }
+}

@@ -1,0 +1,53 @@
+# Publica una versión nueva de Sonora para Windows cada vez que cambia la app.
+# Las apps instaladas con ese instalador la detectan y se actualizan solas.
+#
+# Requisitos: el repositorio debe ser PÚBLICO (el actualizador lee la página de Releases sin contraseña).
+name: Publicar versión
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'public/**'
+      - 'server.js'
+      - 'electron/**'
+      - 'build/**'
+      - 'package.json'
+      - 'package-lock.json'
+  workflow_dispatch:
+
+concurrency:
+  group: publicar
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Número de versión (1.0.N, sube solo en cada publicación)
+        shell: bash
+        run: npm version "1.0.${{ github.run_number }}" --no-git-tag-version --allow-same-version
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Compilar el instalador y publicarlo en Releases
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          npx electron-builder --win --x64 --publish always \
+            -c.publish.provider=github \
+            -c.publish.owner="${{ github.repository_owner }}" \
+            -c.publish.repo="${{ github.event.repository.name }}" \
+            -c.publish.releaseType=release

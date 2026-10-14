@@ -1,0 +1,50 @@
+# Compila el APK de Sonora en la nube (GitHub Actions), sin instalar Android Studio.
+# Uso: sube este proyecto a un repositorio de GitHub -> pestaña "Actions" -> "Compilar APK" -> "Run workflow".
+# Al terminar (unos 5-8 minutos), descarga el archivo "sonora-apk" desde la página de la ejecución.
+name: Compilar APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+    paths: ['android-app/**', '.github/workflows/build-apk.yml']
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android-app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: android-app/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Instalar dependencias y sincronizar
+        run: |
+          npm ci
+          npx cap sync android
+
+      - name: Compilar APK
+        working-directory: android-app/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Guardar APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonora-apk
+          path: android-app/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error

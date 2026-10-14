@@ -1,0 +1,20 @@
+{
+  "appId": "app.sonora.music",
+  "appName": "Sonora",
+  "webDir": "www",
+  "backgroundColor": "#09090d",
+  "server": {
+    "androidScheme": "http",
+    "cleartext": true,
+    "allowNavigation": ["*"]
+  },
+  "android": {
+    "appendUserAgent": "SonoraAndroid",
+    "allowMixedContent": true
+  },
+  "plugins": {
+    "SystemBars": {
+      "style": "DARK"
+    }
+  }
+}
