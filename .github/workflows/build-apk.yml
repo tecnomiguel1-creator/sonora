@@ -21,8 +21,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: android-app/package-lock.json
 
       - uses: actions/setup-java@v4
         with:
@@ -33,7 +31,7 @@ jobs:
 
       - name: Instalar dependencias y sincronizar
         run: |
-          npm ci
+          npm install
           npx cap sync android
 
       - name: Compilar APK
