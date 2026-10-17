@@ -14,6 +14,7 @@ on:
       - 'build/**'
       - 'package.json'
       - 'package-lock.json'
+      - '.github/workflows/publicar.yml'
   workflow_dispatch:
 
 concurrency:
@@ -40,6 +41,15 @@ jobs:
 
       - name: Instalar dependencias
         run: npm ci
+
+      - name: Crear la etiqueta de la versión
+        shell: bash
+        run: |
+          V=$(node -p "require('./package.json').version")
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git tag -f "v$V"
+          git push -f origin "refs/tags/v$V"
 
       - name: Compilar el instalador y publicarlo en Releases
         shell: bash
