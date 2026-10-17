@@ -62,6 +62,31 @@ const isTouch = matchMedia('(hover: none)').matches;
 const inApp = /SonoraAndroid/.test(navigator.userAgent);
 // true cuando se abre desde la propia computadora donde corre Sonora
 const onThisPc = ['localhost', '127.0.0.1'].includes(location.hostname) && !inApp;
+// true cuando la pantalla viene empaquetada dentro del APK (origen http://localhost) y habla con el
+// servidor que guardó la pantalla de conexión. Ahí no hay cookies: se usa un token.
+const BUNDLED = !!window.SONORA_BUNDLED || (inApp && location.hostname === 'localhost');
+const lsRaw = (k) => {
+  try {
+    return localStorage.getItem(k) || '';
+  } catch {
+    return '';
+  }
+};
+const BASE = BUNDLED ? lsRaw('sonora.server').replace(/\/+$/, '') : '';
+let TOKEN = BUNDLED ? lsRaw('sonora.token') : '';
+const setToken = (t) => {
+  TOKEN = t || '';
+  try {
+    if (t) localStorage.setItem('sonora.token', t);
+    else localStorage.removeItem('sonora.token');
+  } catch {
+    /* sin almacenamiento */
+  }
+};
+const authInit = (init = {}) => (BUNDLED && TOKEN ? { ...init, headers: { ...(init.headers || {}), Authorization: `Bearer ${TOKEN}` } } : init);
+// Dirección completa para <audio>, <img> y descargas (que no pueden enviar cabeceras).
+const apiUrl = (p) => BASE + p + (BUNDLED && TOKEN ? `${p.includes('?') ? '&' : '?'}t=${encodeURIComponent(TOKEN)}` : '');
+const Offline = window.Offline || { supported: false, ready: Promise.resolve(), has: () => false, urlSync: () => null, coverUrl: () => null, count: () => 0, bytes: () => 0, ids: () => [], persist() {}, remove: async () => {}, saveLibrary: async () => {}, loadLibrary: async () => null };
 const tap = () => {
   if (!isTouch) return;
   try {
@@ -89,6 +114,7 @@ const state = {
   shuffle: store.get('shuffle', false),
   repeat: store.get('repeat', 'off'),
   current: null,
+  offline: false, // true cuando se abrió sin servidor y solo se ven las canciones guardadas
   uploads: []
 };
 const songMap = new Map();
@@ -100,7 +126,7 @@ const setSongs = (list) => {
   for (const s of list) songMap.set(s.id, s);
 };
 const artistOf = (s) => s?.artist || 'Artista desconocido';
-const coverUrl = (s) => `/api/songs/${s.id}/cover?v=${encodeURIComponent(s.cover)}`;
+const coverUrl = (s) => Offline.coverUrl(s.id) || apiUrl(`/api/songs/${s.id}/cover?v=${encodeURIComponent(s.cover)}`);
 const coverEl = (s, { eq = false, cls = '' } = {}) =>
   s?.cover
     ? `<span class="cover ${cls}"><img loading="lazy" decoding="async" alt="" src="${coverUrl(s)}">${eq ? '<i class="eq"><b></b><b></b><b></b></i>' : ''}</span>`
@@ -109,12 +135,12 @@ const coverEl = (s, { eq = false, cls = '' } = {}) =>
 /* ================================== API ================================= */
 
 async function api(path, { method = 'GET', body } = {}) {
-  const init = { method, credentials: 'same-origin', headers: {} };
+  const init = authInit({ method, credentials: 'same-origin', headers: {} });
   if (body !== undefined) {
     init.headers['Content-Type'] = 'application/json';
     init.body = JSON.stringify(body);
   }
-  const res = await fetch(`/api${path}`, init);
+  const res = await fetch(`${BASE}/api${path}`, init);
   if (res.status === 401) {
     showLogin();
     throw new Error('No autorizado');
@@ -265,13 +291,21 @@ function loadCurrent(autoplay = true, startAt = 0) {
   const song = songMap.get(state.queue[state.index]);
   if (!song) return;
   state.current = song;
-  audio.src = `/api/songs/${song.id}/stream`;
-  if (startAt > 0) audio.addEventListener('loadedmetadata', () => (audio.currentTime = startAt), { once: true });
-  if (autoplay) {
-    const p = audio.play();
-    if (p) p.catch((err) => err.name !== 'AbortError' && console.warn(err));
-    setLoading(true);
-  } else setLoading(false);
+  // Si la canción está guardada en el celular suena desde ahí (sin gastar datos ni necesitar el servidor).
+  const remote = apiUrl(`/api/songs/${song.id}/stream`);
+  const useSrc = (src) => {
+    if (state.current !== song) return; // ya se eligió otra canción mientras tanto
+    audio.src = src;
+    if (startAt > 0) audio.addEventListener('loadedmetadata', () => (audio.currentTime = startAt), { once: true });
+    if (autoplay) {
+      const p = audio.play();
+      if (p) p.catch((err) => err.name !== 'AbortError' && console.warn(err));
+    }
+  };
+  if (Offline.has(song.id) && !Offline.urlSync(song.id)) {
+    Offline.audioUrl(song.id).then((u) => useSrc(u || remote), () => useSrc(remote));
+  } else useSrc(Offline.urlSync(song.id) || remote);
+  setLoading(!!autoplay);
   store.set('last', song.id);
   syncPlayer();
   updateMediaSession();
@@ -502,7 +536,7 @@ function openNowPlaying(open) {
 function updateMediaSession() {
   if (!('mediaSession' in navigator) || !state.current) return;
   const s = state.current;
-  const art = s.cover ? `${location.origin}${coverUrl(s)}` : `${location.origin}/icons/icon-512.png`;
+  const art = new URL(s.cover ? coverUrl(s) : 'icons/icon-512.png', location.href).href;
   try {
     navigator.mediaSession.metadata = new MediaMetadata({
       title: s.title,
@@ -704,6 +738,7 @@ async function deleteSong(id) {
     return toast(err.message);
   }
   const wasCurrent = state.current?.id === id;
+  Offline.remove(id).catch(() => {});
   setSongs(state.songs.filter((x) => x.id !== id));
   for (const p of state.playlists) p.songIds = p.songIds.filter((x) => x !== id);
   state.baseQueue = state.baseQueue.filter((x) => x !== id);
@@ -734,11 +769,152 @@ async function deleteSong(id) {
 
 function downloadSong(id) {
   const a = document.createElement('a');
-  a.href = `/api/songs/${id}/download`;
+  a.href = apiUrl(`/api/songs/${id}/download`);
   a.download = '';
   document.body.append(a);
   a.click();
   a.remove();
+}
+
+/* ============== Guardar en el celular (escuchar sin conexión) ============== */
+
+let saving = false;
+const fmtBytes = (n) => (n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(n / 1e6))} MB`);
+const wifiOk = () => navigator.connection?.type !== 'cellular'; // el guardado automático no gasta datos móviles
+
+async function fetchBlob(path) {
+  const res = await fetch(BASE + path, authInit());
+  if (res.status === 401) {
+    showLogin();
+    throw new Error('No autorizado');
+  }
+  if (!res.ok) throw new Error('No se pudo descargar');
+  return res.blob();
+}
+
+function setSaveStatus(text) {
+  const el = $('#saveStatus');
+  if (el) el.textContent = text;
+}
+
+// Marca con un ✓ las canciones guardadas, sin volver a dibujar la lista.
+function refreshBadges() {
+  for (const row of $$('#view .row')) row.classList.toggle('saved', Offline.has(row.dataset.id));
+}
+
+function renderOfflineBox() {
+  const box = $('#offlineBox');
+  if (!box) return;
+  const n = Offline.count();
+  const auto = store.get('autosave', false);
+  setHtml(
+    box,
+    `<h3>Sin conexión</h3>
+     <p class="muted small">Guarda canciones en el celular para escucharlas sin internet y con la computadora apagada. Las nuevas canciones que subas a tu biblioteca se pueden guardar solas.</p>
+     <p class="small" id="saveStatus"></p>
+     <p class="muted small">Guardadas en el celular: <b>${plural(n, 'canción', 'canciones')}</b>${n ? ` · ${fmtBytes(Offline.bytes())}` : ''}</p>
+     <div class="conn-actions">
+       ${state.offline ? '' : `<button class="btn" data-act="save-all">${icon('download')} Guardar toda la biblioteca</button>`}
+       ${state.offline ? '' : `<button class="btn ghost" data-act="toggle-autosave">Guardar las nuevas solas: ${auto ? 'Sí' : 'No'}</button>`}
+       ${n ? `<button class="btn ghost" data-act="clear-offline">${icon('trash')} Borrar las guardadas</button>` : ''}
+     </div>`
+  );
+}
+
+async function saveSongs(ids, { silent = false } = {}) {
+  if (!Offline.supported) return toast('Este dispositivo no permite guardar música sin conexión.');
+  if (state.offline) return toast('Necesitas conexión con tu servidor para guardar canciones.');
+  if (saving) return toast('Ya se están guardando canciones…');
+  const todo = ids.filter((id) => songMap.has(id) && !Offline.has(id));
+  if (!todo.length) {
+    if (!silent) toast('Ya está guardado en el celular');
+    return;
+  }
+  saving = true;
+  Offline.persist();
+  let done = 0;
+  let failed = 0;
+  if (!silent) toast(todo.length === 1 ? 'Guardando en el celular…' : `Guardando ${todo.length} canciones…`);
+  for (const id of todo) {
+    const s = songMap.get(id);
+    setSaveStatus(`Guardando ${done + failed + 1} de ${todo.length}: ${s.title}`);
+    try {
+      const audioBlob = await fetchBlob(`/api/songs/${id}/stream`);
+      let coverBlob = null;
+      if (s.cover) coverBlob = await fetchBlob(`/api/songs/${id}/cover`).catch(() => null);
+      await Offline.save(id, audioBlob, coverBlob);
+      done += 1;
+      refreshBadges();
+    } catch (err) {
+      failed += 1;
+      if (err?.name === 'QuotaExceededError') {
+        toast('No hay espacio suficiente en el celular');
+        break;
+      }
+      if (err?.message === 'No autorizado') break;
+    }
+  }
+  saving = false;
+  setSaveStatus('');
+  refreshBadges();
+  renderOfflineBox();
+  if (failed) toast(`${done} guardadas, ${failed} con error`);
+  else if (!silent) toast(done === 1 ? 'Guardada en el celular' : `${done} canciones guardadas en el celular`);
+}
+
+async function unsaveSong(id) {
+  await Offline.remove(id).catch(() => {});
+  refreshBadges();
+  renderOfflineBox();
+  if (state.offline) {
+    // Sin conexión solo se muestran las guardadas: esta ya no puede sonar.
+    setSongs(state.songs.filter((x) => x.id !== id));
+    if (state.current?.id === id) {
+      audio.pause();
+      audio.removeAttribute('src');
+      audio.load();
+      state.current = null;
+      syncPlayer();
+    }
+    render();
+  }
+  toast('Quitada del celular');
+}
+
+async function clearOffline() {
+  const ok = await confirmSheet({ title: 'Borrar canciones guardadas', text: 'Se borrarán las copias que están en el celular. Tu biblioteca en el servidor no se toca.' });
+  if (!ok) return;
+  await Offline.clear().catch(() => {});
+  if (state.offline) {
+    setSongs([]);
+    audio.pause();
+    audio.removeAttribute('src');
+    state.current = null;
+    syncPlayer();
+  }
+  refreshBadges();
+  renderOfflineBox();
+  if (state.offline) render();
+  toast('Se borraron las canciones guardadas');
+}
+
+// Con "guardar las nuevas solas" activado, al abrir la app se guardan las canciones que falten.
+function maybeAutoSave() {
+  if (!BUNDLED || state.offline || !Offline.supported || !store.get('autosave', false) || !wifiOk()) return;
+  saveSongs(state.songs.map((s) => s.id), { silent: true });
+}
+
+function showOfflineBar() {
+  let bar = $('#offlineBar');
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'offlineBar';
+    bar.className = 'offline-bar';
+    bar.innerHTML = '<span>Sin conexión con tu servidor. Se muestran solo las canciones guardadas en el celular.</span><button type="button">Reintentar</button>';
+    bar.querySelector('button').addEventListener('click', () => location.reload());
+    $('.topbar').after(bar);
+  }
+  bar.hidden = false;
 }
 
 async function createPlaylist(songIds = []) {
@@ -824,6 +1000,9 @@ function songMenu(id, ctx) {
     { icon: 'heart', label: s.favorite ? 'Quitar de favoritas' : 'Añadir a favoritas', run: () => toggleFav(id) },
     ...(ctx?.type === 'playlist' ? [{ icon: 'x', label: 'Quitar de esta lista', run: () => removeFromPlaylist(ctx.id, id) }] : []),
     { icon: 'edit', label: 'Editar información', run: () => editSong(id) },
+    ...(BUNDLED && Offline.supported
+      ? [Offline.has(id) ? { icon: 'x', label: 'Quitar del celular', run: () => unsaveSong(id) } : { icon: 'download', label: 'Guardar en el celular', run: () => saveSongs([id]) }]
+      : []),
     ...(inApp ? [] : [{ icon: 'download', label: 'Descargar', run: () => downloadSong(id) }]),
     { icon: 'trash', label: 'Eliminar', danger: true, run: () => deleteSong(id) }
   ]);
@@ -875,7 +1054,12 @@ function go(view) {
   $('#main').scrollTo({ top: 0 });
 }
 
+const cacheLibrary = debounce(() => {
+  if (BUNDLED && !state.offline && state.songs.length) Offline.saveLibrary(state.songs, state.playlists);
+}, 800);
+
 function render() {
+  cacheLibrary();
   const v = state.view;
   const root = $('#view');
   $$('[data-nav]').forEach((b) => b.classList.toggle('active', b.dataset.nav === navKey(v)));
@@ -918,7 +1102,7 @@ function renderEmptyLibrary(root) {
 
 function rowHtml(s) {
   return `
-    <li class="row" data-id="${s.id}">
+    <li class="row${Offline.has(s.id) ? ' saved' : ''}" data-id="${s.id}">
       <button class="row-main" data-act="play" aria-label="Reproducir ${esc(s.title)}">
         ${coverEl(s, { eq: true })}
         <span class="meta"><span class="t">${esc(s.title)}</span><span class="s">${esc(artistOf(s))}${s.album ? ` · ${esc(s.album)}` : ''}</span></span>
@@ -1016,15 +1200,17 @@ function renderUpload(root) {
     ${inApp || state.authRequired || onThisPc
       ? `<section class="conn">
           <h3>Conexión</h3>
-          <p class="muted small">Servidor: ${esc(location.host)}</p>
+          <p class="muted small">Servidor: ${esc(BUNDLED ? BASE.replace(/^https?:\/\//, '') : location.host)}</p>
           ${onThisPc ? `<div id="lanInfo" class="lan" hidden></div>` : ''}
           <div class="conn-actions">
             ${inApp ? `<button class="btn ghost" data-act="change-server">${icon('edit')} Cambiar servidor</button>` : ''}
             ${state.authRequired ? `<button class="btn ghost" data-act="logout">${icon('logout')} Cerrar sesión</button>` : ''}
           </div>
         </section>`
-      : ''}`;
+      : ''}
+    ${BUNDLED && Offline.supported ? '<section class="conn" id="offlineBox"></section>' : ''}`;
   renderUploadList();
+  renderOfflineBox();
   if (onThisPc) showLanInfo();
 }
 
@@ -1111,7 +1297,8 @@ function uploadOne(u) {
     u.status = 'up';
     touchUploadRow(u);
     const xhr = new XMLHttpRequest();
-    xhr.open('POST', '/api/upload');
+    xhr.open('POST', `${BASE}/api/upload`);
+    if (BUNDLED && TOKEN) xhr.setRequestHeader('Authorization', `Bearer ${TOKEN}`);
     xhr.upload.onprogress = (e) => {
       if (!e.lengthComputable) return;
       u.progress = e.loaded / e.total;
@@ -1176,7 +1363,15 @@ $('#view').addEventListener('click', (e) => {
     case 'rename-playlist': renamePlaylist(state.view.id); break;
     case 'delete-playlist': deletePlaylist(state.view.id); break;
     case 'go-upload': go({ name: 'upload' }); break;
-    case 'change-server': location.href = 'http://localhost/?cambiar=1'; break;
+    case 'change-server': location.href = BUNDLED ? '../index.html?cambiar=1' : 'http://localhost/?cambiar=1'; break;
+    case 'reload': location.reload(); break;
+    case 'save-all': saveSongs(state.songs.map((x) => x.id)); break;
+    case 'clear-offline': clearOffline(); break;
+    case 'toggle-autosave':
+      store.set('autosave', !store.get('autosave', false));
+      renderOfflineBox();
+      if (store.get('autosave', false)) maybeAutoSave();
+      break;
     case 'logout': logout(); break;
     case 'copy-addr':
       navigator.clipboard?.writeText(t.dataset.addr).then(() => toast('Dirección copiada'), () => toast(t.dataset.addr));
@@ -1203,7 +1398,8 @@ document.addEventListener('click', (e) => {
   if (side) go({ name: 'playlist', id: side.dataset.pid });
 });
 async function logout() {
-  await fetch('/api/logout', { method: 'POST', credentials: 'same-origin' });
+  await fetch(`${BASE}/api/logout`, authInit({ method: 'POST', credentials: 'same-origin' })).catch(() => {});
+  if (BUNDLED) setToken('');
   audio.pause();
   location.reload();
 }
@@ -1260,13 +1456,15 @@ $('#loginForm').addEventListener('submit', async (e) => {
   const err = $('#loginError');
   err.hidden = true;
   try {
-    const res = await fetch('/api/login', {
+    const res = await fetch(`${BASE}/api/login`, {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ password: $('#loginPass').value })
     });
-    if (!res.ok) throw new Error((await res.json()).error || 'No se pudo entrar');
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'No se pudo entrar');
+    if (BUNDLED) setToken(data.token || '');
     $('#loginPass').value = '';
     await start();
   } catch (error) {
@@ -1278,7 +1476,32 @@ $('#loginForm').addEventListener('submit', async (e) => {
 function showFatal(message) {
   $('#login').hidden = true;
   $('#app').hidden = false;
-  $('#view').innerHTML = `<div class="empty"><div class="ico">${icon('alert')}</div><h2>No hay conexión</h2><p>${esc(message)}</p><button class="btn primary" onclick="location.reload()">Reintentar</button></div>`;
+  $('#view').innerHTML = `<div class="empty"><div class="ico">${icon('alert')}</div><h2>No hay conexión</h2><p>${esc(message)}</p><div class="conn-actions" style="justify-content:center"><button class="btn primary" data-act="reload">Reintentar</button>${BUNDLED ? `<button class="btn ghost" data-act="change-server">Cambiar servidor</button>` : ''}</div></div>`;
+}
+
+// Abre la app sin servidor con la copia de la biblioteca: solo canciones ya guardadas en el celular.
+async function startOffline() {
+  if (!BUNDLED || !Offline.supported) return false;
+  await Offline.ready;
+  const lib = await Offline.loadLibrary();
+  const saved = (lib?.songs || []).filter((s) => Offline.has(s.id));
+  if (!saved.length) return false;
+  state.offline = true;
+  setSongs(saved);
+  const have = new Set(saved.map((s) => s.id));
+  state.playlists = (lib.playlists || []).map((p) => ({ ...p, songIds: (p.songIds || []).filter((id) => have.has(id)) })).filter((p) => p.songIds.length);
+  $('#login').hidden = true;
+  $('#app').hidden = false;
+  showOfflineBar();
+  return true;
+}
+
+function finishStart() {
+  syncPlayer();
+  restoreLast();
+  renderSide();
+  render();
+  maybeAutoSave();
 }
 
 async function start() {
@@ -1286,26 +1509,33 @@ async function start() {
   $('#app').hidden = false;
   try {
     const [songs, playlists] = await Promise.all([api('/songs'), api('/playlists')]);
+    state.offline = false;
+    $('#offlineBar')?.setAttribute('hidden', '');
     setSongs(songs);
     state.playlists = playlists;
+    if (BUNDLED) Offline.saveLibrary(songs, playlists);
   } catch (err) {
-    if (err.message !== 'No autorizado') showFatal('No se pudo cargar tu biblioteca. Revisa que el servidor de Sonora esté encendido.');
+    if (err.message === 'No autorizado') return;
+    if (!(await startOffline())) showFatal('No se pudo cargar tu biblioteca. Revisa que el servidor de Sonora esté encendido y que tengas internet.');
+    else finishStart();
     return;
   }
-  syncPlayer();
-  restoreLast();
-  renderSide();
-  render();
+  finishStart();
 }
 
 async function boot() {
   initMediaSession();
   syncPlayer();
+  if (BUNDLED) {
+    await Offline.ready;
+    if (!BASE) return void (location.href = '../index.html?cambiar=1'); // todavía no se eligió servidor
+  }
   let session;
   try {
-    session = await (await fetch('/api/session', { credentials: 'same-origin' })).json();
+    session = await (await fetch(`${BASE}/api/session`, authInit({ credentials: 'same-origin' }))).json();
   } catch {
-    return showFatal('No se pudo conectar con tu servidor Sonora. Revisa que esté encendido y que estés en la misma red.');
+    if (await startOffline()) return finishStart();
+    return showFatal('No se pudo conectar con tu servidor Sonora. Revisa que esté encendido y que tengas internet o estés en la misma red.');
   }
   state.authRequired = session.authRequired;
   state.maxMb = session.maxMb || 300;
@@ -1313,5 +1543,5 @@ async function boot() {
   await start();
 }
 
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+if ('serviceWorker' in navigator && !BUNDLED) navigator.serviceWorker.register('/sw.js').catch(() => {});
 boot();

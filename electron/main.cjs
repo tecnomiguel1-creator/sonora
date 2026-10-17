@@ -3,7 +3,7 @@
 // Al cerrar la ventana sigue funcionando en la bandeja del sistema (junto al reloj),
 // para que el celular pueda seguir escuchando tu música.
 
-const { app, BrowserWindow, Tray, Menu, dialog, shell, clipboard, nativeImage } = require('electron');
+const { app, BrowserWindow, Tray, Menu, dialog, shell, clipboard, nativeImage, ipcMain } = require('electron');
 const path = require('node:path');
 const os = require('node:os');
 const net = require('node:net');
@@ -26,11 +26,105 @@ let trayHintShown = false;
 let autoUpdater = null;
 let updateReady = null; // versión ya descargada, lista para instalar
 let manualCheck = false;
+let remoteUrl = ''; // si hay una dirección aquí, Sonora usa ese servidor en la nube en vez del servidor de esta PC
 
 app.setAppUserModelId('app.sonora.music.desktop');
 // Que la siguiente canción suene sola y que las teclas multimedia del teclado funcionen.
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 app.commandLine.appendSwitch('enable-features', 'HardwareMediaKeyHandling,MediaSessionService');
+
+/* ------------------------- Servidor en la nube (opcional) ------------------ */
+// Si guardas la dirección de tu servidor en la nube, esta app se conecta a él (igual que el celular):
+// la música vive en el servidor y funciona aunque esta PC esté apagada o en otra red.
+
+const configFile = () => path.join(app.getPath('userData'), 'config.json');
+
+function readConfig() {
+  try {
+    return JSON.parse(fs.readFileSync(configFile(), 'utf8')) || {};
+  } catch {
+    return {};
+  }
+}
+
+function saveConfig(patch) {
+  const next = { ...readConfig(), ...patch };
+  fs.mkdirSync(path.dirname(configFile()), { recursive: true });
+  fs.writeFileSync(configFile(), JSON.stringify(next, null, 2));
+}
+
+function normalizeRemote(value) {
+  value = String(value || '').trim();
+  if (!value) return '';
+  if (!/^https?:\/\//i.test(value)) value = 'https://' + value;
+  try {
+    const u = new URL(value);
+    return u.origin;
+  } catch {
+    return null;
+  }
+}
+
+function baseUrl() {
+  return remoteUrl || `http://localhost:${port}`;
+}
+
+let remoteWin = null;
+function openRemoteDialog() {
+  if (remoteWin) return remoteWin.focus();
+  remoteWin = new BrowserWindow({
+    width: 520,
+    height: 400,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    parent: win && win.isVisible() ? win : undefined,
+    modal: !!(win && win.isVisible()),
+    autoHideMenuBar: true,
+    title: 'Servidor en la nube',
+    icon: ICON,
+    backgroundColor: '#15151d',
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      preload: path.join(__dirname, 'nube-preload.cjs')
+    }
+  });
+  remoteWin.setMenu(null);
+  remoteWin.loadFile(path.join(__dirname, 'nube.html'), { query: { actual: remoteUrl } });
+  remoteWin.on('closed', () => {
+    remoteWin = null;
+  });
+}
+
+ipcMain.handle('nube:guardar', async (_event, raw) => {
+  const url = normalizeRemote(raw);
+  if (url === null) return { ok: false, error: 'Esa dirección no parece válida. Ejemplo: https://sonora-abcd.onrender.com' };
+  if (url) {
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 15000);
+      const res = await fetch(`${url}/api/session`, { signal: ctrl.signal });
+      clearTimeout(timer);
+      if (!res.ok) throw new Error(String(res.status));
+    } catch {
+      return {
+        ok: false,
+        error: 'No se pudo conectar con esa dirección. Revisa que esté bien escrita y que el servidor esté encendido (la primera vez puede tardar un minuto en despertar).'
+      };
+    }
+  }
+  saveConfig({ remoteUrl: url });
+  setTimeout(() => {
+    quitting = true;
+    app.relaunch();
+    app.exit(0);
+  }, 300);
+  return { ok: true };
+});
+
+ipcMain.on('nube:cerrar', () => remoteWin && remoteWin.close());
 
 /* ------------------------------- Servidor -------------------------------- */
 
@@ -91,7 +185,14 @@ function createWindow() {
   win.once('ready-to-show', () => {
     if (!START_HIDDEN) win.show();
   });
-  win.loadURL(`http://localhost:${port}`);
+  win.loadURL(baseUrl());
+
+  // Si el servidor en la nube no responde (sin internet, por ejemplo), muestra un aviso con salida.
+  win.webContents.on('did-fail-load', (_e, code, _desc, _url, isMainFrame) => {
+    if (!remoteUrl || !isMainFrame || code === -3) return;
+    const html = `<meta charset="utf-8"><body style="margin:0;display:grid;place-items:center;height:100vh;background:#09090d;color:#f5f5f8;font:16px system-ui,sans-serif;text-align:center"><div style="max-width:420px;padding:24px"><h2>No se pudo conectar con tu Sonora</h2><p style="color:#a2a2b6">Revisa tu conexión a internet. Si usas un servidor gratis, puede tardar un minuto en despertar.</p><button onclick="location.href='${remoteUrl}'" style="padding:12px 22px;border:0;border-radius:99px;background:#ff6a3d;font-weight:700;cursor:pointer">Reintentar</button></div>`;
+    win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
+  });
 
   // Los enlaces externos se abren en el navegador, no dentro de Sonora.
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -99,7 +200,7 @@ function createWindow() {
     return { action: 'deny' };
   });
   win.webContents.on('will-navigate', (event, url) => {
-    if (!url.startsWith(`http://localhost:${port}`)) {
+    if (!url.startsWith(baseUrl()) && !url.startsWith('data:')) {
       event.preventDefault();
       if (/^https?:\/\//i.test(url)) shell.openExternal(url);
     }
@@ -142,6 +243,20 @@ function lanAddresses() {
 
 async function showConnect() {
   showWindow();
+  if (remoteUrl) {
+    const { response } = await dialog.showMessageBox(win && win.isVisible() ? win : undefined, {
+      type: 'info',
+      title: 'Conectar el celular',
+      message: 'Tu Sonora está en la nube',
+      detail: `En el celular abre la app Sonora y escribe esta dirección:\n\n      ${remoteUrl}\n\nFunciona en cualquier Wi-Fi o con datos, aunque esta computadora esté apagada. Inicia sesión con tu contraseña.`,
+      buttons: ['Copiar dirección', 'Cerrar'],
+      defaultId: 0,
+      cancelId: 1,
+      noLink: true
+    });
+    if (response === 0) clipboard.writeText(remoteUrl);
+    return;
+  }
   const list = lanAddresses();
   const main = list[0] ? `${list[0]}:${port}` : '';
   const others = list.slice(1).map((ip) => `${ip}:${port}`);
@@ -301,7 +416,8 @@ function trayMenu() {
       enabled: app.isPackaged && process.platform === 'win32',
       click: toggleAutostart
     },
-    { label: 'Abrir carpeta de datos', click: () => shell.openPath(dataDir) },
+    { label: 'Servidor en la nube…', click: openRemoteDialog },
+    { label: 'Abrir carpeta de datos', enabled: !remoteUrl, click: () => shell.openPath(dataDir) },
     { type: 'separator' },
     { label: `Versión ${app.getVersion()}`, enabled: false },
     { label: 'Buscar actualizaciones…', click: checkUpdatesManual },
@@ -329,7 +445,8 @@ function createMenu() {
         label: 'Sonora',
         submenu: [
           { label: 'Conectar celular…', accelerator: 'CmdOrCtrl+K', click: showConnect },
-          { label: 'Abrir carpeta de datos', click: () => shell.openPath(dataDir) },
+          { label: 'Servidor en la nube…', click: openRemoteDialog },
+          { label: 'Abrir carpeta de datos', enabled: !remoteUrl, click: () => shell.openPath(dataDir) },
           { type: 'separator' },
           { label: `Versión ${app.getVersion()}`, enabled: false },
           { label: 'Buscar actualizaciones…', click: checkUpdatesManual },
@@ -368,7 +485,8 @@ if (!app.requestSingleInstanceLock()) {
 
   app.whenReady().then(async () => {
     try {
-      await startServer();
+      remoteUrl = normalizeRemote(readConfig().remoteUrl) || '';
+      if (!remoteUrl) await startServer();
     } catch (err) {
       dialog.showErrorBox('Sonora no pudo iniciar', String(err?.message || err));
       quitting = true;
@@ -378,6 +496,7 @@ if (!app.requestSingleInstanceLock()) {
     createMenu();
     createTray();
     createWindow();
+    if (process.argv.includes('--nube')) openRemoteDialog();
     setupUpdates();
   });
 }

@@ -48,12 +48,17 @@
 
   <section id="setup" hidden>
     <p class="sub">Tu música, sin anuncios.</p>
+    <div class="card" id="finder">
+      <button type="button" id="auto" style="margin-top:0">Buscar mi Sonora automáticamente</button>
+      <p class="help" id="autoMsg">Solo para Sonora en tu computadora: con ella encendida y Sonora abierta, y el celular en el mismo Wi-Fi.</p>
+    </div>
+    <p class="sub" style="margin:18px 0 10px">o escribe la dirección a mano</p>
     <form class="card" id="form">
       <label for="addr">Dirección de tu servidor Sonora</label>
-      <input id="addr" inputmode="url" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="192.168.1.25:3000">
+      <input id="addr" inputmode="url" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="https://sonora-abcd.onrender.com">
       <p class="error" id="error" role="alert" hidden></p>
       <button type="submit" id="go">Conectar</button>
-      <p class="help">Es la dirección que aparece en la ventana de Sonora en tu computadora, por ejemplo <b>http://192.168.1.25:3000</b>. El celular debe estar en el mismo Wi-Fi (o conectado por Tailscale).</p>
+      <p class="help">Si tu Sonora está en la nube, escribe su dirección, por ejemplo <b>https://sonora-abcd.onrender.com</b>: funciona en cualquier Wi-Fi o con datos. Si está en tu computadora, usa la que aparece en su ventana (por ejemplo <b>192.168.1.25:3000</b>) y el celular debe estar en el mismo Wi-Fi.</p>
     </form>
   </section>
 </main>
@@ -68,7 +73,12 @@
   function normalize(value) {
     value = (value || '').trim();
     if (!value) return '';
-    if (!/^https?:\/\//i.test(value)) value = 'http://' + value;
+    if (!/^https?:\/\//i.test(value)) {
+      // Una dirección con nombre (sonora.onrender.com) usa https; una con números (192.168…) usa http.
+      var host = value.split('/')[0].split(':')[0];
+      var isIp = /^\d+\.\d+\.\d+\.\d+$/.test(host) || host === 'localhost';
+      value = (isIp ? 'http://' : 'https://') + value;
+    }
     return value.replace(/\/+$/, '');
   }
 
@@ -89,10 +99,78 @@
     err.textContent = message || '';
   }
 
+  // Guarda el servidor y abre la pantalla de Sonora que va dentro de la app.
   function open(url) {
-    try { localStorage.setItem(KEY, url); } catch (e) {}
-    location.replace(url + '/');
+    try {
+      if (localStorage.getItem(KEY) !== url) { localStorage.removeItem('sonora.token'); localStorage.removeItem('sonora.ui'); } // otro servidor: otra sesión y otra pantalla
+      localStorage.setItem(KEY, url);
+    } catch (e) {}
+    location.replace('app/start.html');
   }
+
+
+  // ---- Búsqueda automática en la red local ----
+  var PORT = 3000;
+  var PREFIXES = ['192.168.0', '192.168.1', '192.168.100', '192.168.2', '192.168.137', '192.168.68', '10.0.0', '10.0.1', '172.20.10'];
+  var scanToken = 0;
+
+  function probe(url, ms) {
+    var ctrl = new AbortController();
+    var timer = setTimeout(function () { ctrl.abort(); }, ms);
+    return fetch(url + '/api/session', { mode: 'no-cors', cache: 'no-store', signal: ctrl.signal })
+      .then(function () { return true; }, function () { return false; })
+      .then(function (ok) { clearTimeout(timer); return ok; });
+  }
+
+  // Devuelve una promesa con la URL encontrada (o '' si no hay).
+  function scanNetwork(prefixes, port, onProgress, token) {
+    var hosts = [];
+    prefixes.forEach(function (pre) { for (var i = 1; i <= 254; i++) hosts.push('http://' + pre + '.' + i + ':' + port); });
+    var total = hosts.length, next = 0, done = 0, found = '';
+    return new Promise(function (resolve) {
+      function worker() {
+        if (found || token !== scanToken || next >= total) { if (--running === 0) resolve(found); return; }
+        var url = hosts[next++];
+        probe(url, 1300).then(function (ok) {
+          done++;
+          if (ok && !found) found = url;
+          onProgress(Math.round(done * 100 / total));
+          worker();
+        });
+      }
+      var running = 40;
+      for (var w = 0; w < 40; w++) worker();
+    });
+  }
+
+  function prefixesFor(savedUrl) {
+    var list = PREFIXES.slice();
+    var m = /^https?:\/\/(\d+\.\d+\.\d+)\.\d+/.exec(savedUrl || '');
+    if (m) { list = [m[1]].concat(list.filter(function (x) { return x !== m[1]; })); }
+    return list;
+  }
+
+  function autoSearch() {
+    var token = ++scanToken;
+    var btn = $('auto'), msg = $('autoMsg');
+    var pm = /:(\d+)\/?$/.exec(saved || '');
+    var port = pm ? +pm[1] : PORT;
+    btn.disabled = true;
+    btn.textContent = 'Buscando…';
+    msg.textContent = 'Buscando tu Sonora en la red… 0%';
+    return scanNetwork(prefixesFor(saved), port, function (pct) {
+      if (token === scanToken) msg.textContent = 'Buscando tu Sonora en la red… ' + pct + '%';
+    }, token).then(function (url) {
+      if (token !== scanToken) return;
+      btn.disabled = false;
+      btn.textContent = 'Buscar mi Sonora automáticamente';
+      if (url) { msg.textContent = 'Encontrada. Abriendo…'; open(url); }
+      else {
+        msg.textContent = 'No la encontré. Revisa que Sonora esté abierta en la computadora y que el celular esté en el mismo Wi-Fi (no con datos móviles). Puedes escribir la dirección a mano.';
+      }
+    });
+  }
+  $('auto').addEventListener('click', autoSearch);
 
   $('form').addEventListener('submit', function (e) {
     e.preventDefault();
@@ -109,12 +187,9 @@
   });
 
   if (saved && !params.has('cambiar')) {
+    // Ya hay servidor guardado: se abre directo. La app decide si hay conexión o si usa lo guardado en el celular.
     show('connecting');
-    reachable(saved).then(function (ok) {
-      if (ok) { open(saved); return; }
-      $('addr').value = saved.replace(/^https?:\/\//, '');
-      show('setup', 'No se pudo conectar con ' + saved + '. Revisa que Sonora esté encendida y que estés en la misma red.');
-    });
+    location.replace('app/start.html');
   } else {
     $('addr').value = saved.replace(/^https?:\/\//, '');
     show('setup');

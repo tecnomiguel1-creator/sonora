@@ -19,13 +19,18 @@ const PORT = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
 const PASSWORD = process.env.SONORA_PASSWORD || '';
 const MAX_MB = Number(process.env.SONORA_MAX_MB) || 300;
+// En un servidor público (nube) la contraseña es obligatoria: sin ella cualquiera podría ver o borrar tu música.
+if (!PASSWORD && (process.env.RENDER || process.env.SONORA_REQUIRE_PASSWORD)) {
+  console.error('\n  Falta la contraseña: define la variable SONORA_PASSWORD antes de publicar Sonora en internet.\n');
+  process.exit(1);
+}
 const DATA_DIR = path.resolve(process.env.SONORA_DATA || path.join(__dirname, 'data'));
 const MUSIC_DIR = path.join(DATA_DIR, 'music');
 const COVER_DIR = path.join(DATA_DIR, 'covers');
 const TMP_DIR = path.join(DATA_DIR, 'tmp');
 const DB_FILE = path.join(DATA_DIR, 'library.json');
 const SECRET_FILE = path.join(DATA_DIR, 'secret.key');
-const PUBLIC_DIR = path.join(__dirname, 'public');
+const PUBLIC_DIR = process.env.SONORA_PUBLIC ? path.resolve(process.env.SONORA_PUBLIC) : path.join(__dirname, 'public');
 
 for (const dir of [MUSIC_DIR, COVER_DIR, TMP_DIR]) fs.mkdirSync(dir, { recursive: true });
 for (const f of fs.readdirSync(TMP_DIR)) fs.rmSync(path.join(TMP_DIR, f), { force: true });
@@ -117,7 +122,15 @@ function getCookie(req, name) {
   }
   return '';
 }
-const isAuthed = (req) => !PASSWORD || safeEqual(getCookie(req, 'sonora_auth'), AUTH_TOKEN);
+// La sesión llega por cookie (navegador / app de escritorio) o por token (app del celular, que
+// tiene su propia pantalla y habla con el servidor desde otro origen): cabecera Authorization o ?t=.
+function tokenFromRequest(req) {
+  const h = req.headers.authorization || '';
+  if (/^Bearer /i.test(h)) return h.slice(7).trim();
+  return typeof req.query?.t === 'string' ? req.query.t : '';
+}
+const isAuthed = (req) =>
+  !PASSWORD || safeEqual(getCookie(req, 'sonora_auth'), AUTH_TOKEN) || safeEqual(tokenFromRequest(req), AUTH_TOKEN);
 
 const loginAttempts = new Map();
 const tooManyAttempts = (ip) => {
@@ -131,7 +144,7 @@ const tooManyAttempts = (ip) => {
 
 const app = express();
 app.disable('x-powered-by');
-if (process.env.SONORA_TRUST_PROXY) app.set('trust proxy', true);
+if (process.env.SONORA_TRUST_PROXY || process.env.RENDER) app.set('trust proxy', true);
 
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -140,6 +153,26 @@ app.use((req, res, next) => {
     'Content-Security-Policy',
     "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-ancestors 'none'"
   );
+  next();
+});
+// CORS: la app del celular lleva su pantalla dentro (origen http://localhost) y consulta a este servidor.
+// Solo se aceptan esos orígenes (más los que pongas en SONORA_CORS_ORIGINS, separados por comas).
+const CORS_ORIGINS = new Set(
+  ['http://localhost', 'https://localhost', 'capacitor://localhost', ...(process.env.SONORA_CORS_ORIGINS || '').split(',')]
+    .map((o) => o.trim())
+    .filter(Boolean)
+);
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin && CORS_ORIGINS.has(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, Range');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Accept-Ranges');
+    res.setHeader('Access-Control-Max-Age', '86400');
+    if (req.method === 'OPTIONS') return res.status(204).end();
+  }
   next();
 });
 app.use(express.json({ limit: '100kb' }));
@@ -158,12 +191,35 @@ app.post('/api/login', (req, res) => {
   }
   const secure = req.secure ? '; Secure' : '';
   res.setHeader('Set-Cookie', `sonora_auth=${AUTH_TOKEN}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000${secure}`);
-  res.json({ ok: true });
+  res.json({ ok: true, token: AUTH_TOKEN });
 });
 
 app.post('/api/logout', (req, res) => {
   res.setHeader('Set-Cookie', 'sonora_auth=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0');
   res.json({ ok: true });
+});
+
+// La app del celular lleva una copia de la pantalla, pero al abrirse con conexión baja de aquí la versión
+// más reciente (así los cambios de diseño llegan sin reinstalar el APK).
+const UI_FILES = ['index.html', 'styles.css', 'offline.js', 'app.js'];
+let uiCache = { key: '', body: null };
+app.get('/ui-bundle.json', (req, res) => {
+  try {
+    const key = UI_FILES.map((f) => fs.statSync(path.join(PUBLIC_DIR, f)).mtimeMs).join(',');
+    if (uiCache.key !== key) {
+      const files = {};
+      const hash = crypto.createHash('sha1');
+      for (const f of UI_FILES) {
+        files[f] = fs.readFileSync(path.join(PUBLIC_DIR, f), 'utf8');
+        hash.update(f).update(files[f]);
+      }
+      uiCache = { key, body: { version: hash.digest('hex').slice(0, 12), files } };
+    }
+    res.setHeader('Cache-Control', 'no-cache');
+    res.json(uiCache.body);
+  } catch {
+    res.status(500).json({ error: 'No disponible' });
+  }
 });
 
 app.use(

@@ -16,6 +16,8 @@ echo  Instalando componentes ^(solo la primera vez^)...
 call npm install
 if errorlevel 1 ( echo  No se pudo instalar. Revisa tu conexion a internet. & pause & exit /b 1 )
 
+call node scripts\bundle-ui.mjs
+if errorlevel 1 ( echo  No se pudo preparar la pantalla. Usa la carpeta de Sonora completa. & pause & exit /b 1 )
 call npx cap sync android
 if errorlevel 1 ( echo  Fallo la sincronizacion. & pause & exit /b 1 )
 

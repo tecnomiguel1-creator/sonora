@@ -5,7 +5,8 @@
   "description": "Sonora para Android (APK): se conecta a tu servidor Sonora",
   "scripts": {
     "preparar": "node scripts/preparar.mjs",
-    "sync": "cap sync android"
+    "sync": "node scripts/bundle-ui.mjs && cap sync android",
+    "bundle": "node scripts/bundle-ui.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.3",

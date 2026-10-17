@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main, master]
-    paths: ['android-app/**', '.github/workflows/build-apk.yml']
+    paths: ['android-app/**', 'public/**', '.github/workflows/build-apk.yml']
 
 jobs:
   apk:
@@ -32,6 +32,7 @@ jobs:
       - name: Instalar dependencias y sincronizar
         run: |
           npm install
+          node scripts/bundle-ui.mjs
           npx cap sync android
 
       - name: Compilar APK

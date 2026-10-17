@@ -1,0 +1,20 @@
+# Sonora en la nube (Render). En Render: New + > Blueprint > elige este repositorio.
+# Te pedirá la contraseña (SONORA_PASSWORD). La música se guarda en un disco permanente.
+services:
+  - type: web
+    name: sonora
+    runtime: docker
+    plan: starter          # los discos permanentes requieren un plan de pago
+    autoDeploy: true       # cada cambio que subas a GitHub se publica solo
+    healthCheckPath: /api/session
+    disk:
+      name: sonora-data
+      mountPath: /data
+      sizeGB: 10           # espacio para tu música (se puede ampliar después)
+    envVars:
+      - key: SONORA_PASSWORD
+        sync: false        # la escribes tú en Render; no queda en GitHub
+      - key: SONORA_TRUST_PROXY
+        value: "1"
+      - key: SONORA_MAX_MB
+        value: "300"

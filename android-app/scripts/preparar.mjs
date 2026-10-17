@@ -13,6 +13,7 @@ const run = (cmd) => {
 if (!fs.existsSync('android')) run('npx cap add android');
 run('npx capacitor-assets generate --android --assetPath assets --iconBackgroundColor "#09090d" --iconBackgroundColorDark "#09090d" --splashBackgroundColor "#09090d" --splashBackgroundColorDark "#09090d"');
 personalizar();
+run('node scripts/bundle-ui.mjs');
 run('npx cap sync android');
 
 console.log('\n✔ Listo. El proyecto Android está en la carpeta "android".');
