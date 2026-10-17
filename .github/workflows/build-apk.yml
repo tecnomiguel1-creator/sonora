@@ -27,7 +27,9 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      - uses: android-actions/setup-android@v3
+      # El Android SDK ya viene instalado en ubuntu-latest; solo aceptamos las licencias.
+      - name: Preparar Android SDK
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
 
       - name: Instalar dependencias y sincronizar
         run: |
