@@ -26,5 +26,8 @@ if not exist node_modules (
 rem Para proteger con contrasena, quita "rem" de la siguiente linea y cambia la clave:
 rem set SONORA_PASSWORD=mi-clave-segura
 
+rem Abre Sonora en el navegador (funciona sin internet: todo corre en esta PC)
+start "" http://localhost:3000
+
 node server.js
 pause

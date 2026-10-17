@@ -19,7 +19,7 @@ Sonora es una app web instalable (PWA) con su propio servidor. Tus canciones se 
 
 Necesitas **Node.js 20 o superior** (gratis): <https://nodejs.org> (versión LTS).
 
-**Windows:** haz doble clic en `iniciar.bat`.
+**Windows:** haz doble clic en `iniciar.bat`. Se abre Sonora en el navegador y funciona sin internet ni wifi: las canciones quedan en esta PC. Para que parezca una app, en Chrome/Edge elige *Instalar Sonora* en el menú del navegador. No hace falta el instalador de Windows (queda solo como opción manual).
 
 **Mac / Linux:** abre una terminal en esta carpeta y ejecuta `./iniciar.sh`.
 

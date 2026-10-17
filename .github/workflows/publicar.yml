@@ -5,16 +5,7 @@
 name: Publicar versión
 
 on:
-  push:
-    branches: [main, master]
-    paths:
-      - 'public/**'
-      - 'server.js'
-      - 'electron/**'
-      - 'build/**'
-      - 'package.json'
-      - 'package-lock.json'
-      - '.github/workflows/publicar.yml'
+  # Solo se lanza a mano (pestaña Actions -> Run workflow). La PC usa Sonora en el navegador con iniciar.bat.
   workflow_dispatch:
 
 concurrency:
