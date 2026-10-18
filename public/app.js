@@ -1031,7 +1031,11 @@ async function clearOffline() {
     render();
     return toast('Se borró toda la música');
   }
-  await Offline.clear().catch(() => {});
+  if (localCount()) {
+    // Las canciones que solo existen en el celular no se tocan.
+    const keep = new Set(window.LocalLib.songs().map((s) => s.id));
+    for (const id of Offline.ids()) if (!keep.has(id)) await Offline.remove(id).catch(() => {});
+  } else await Offline.clear().catch(() => {});
   if (state.offline) {
     setSongs([]);
     audio.pause();
@@ -1354,9 +1358,11 @@ function renderUpload(root) {
           </div>
         </section>`
       : ''}
-    ${BUNDLED && Offline.supported ? '<section class="conn" id="offlineBox"></section>' : ''}`;
+    ${BUNDLED && Offline.supported ? '<section class="conn" id="offlineBox"></section>' : ''}
+    ${localCount() ? '<section class="conn" id="localBox"></section>' : ''}`;
   renderUploadList();
   renderOfflineBox();
+  renderLocalBox();
   if (onThisPc) showLanInfo();
 }
 
@@ -1409,17 +1415,17 @@ function touchUploadRow(u) {
   });
 }
 
-function enqueueFiles(fileList) {
+function enqueueFiles(fileList, { stay = false } = {}) {
   const files = [...fileList];
   if (!files.length) return;
   for (const file of files) {
-    const u = { id: Math.random().toString(36).slice(2), file, name: file.name, progress: 0, status: 'wait', error: '' };
+    const u = { id: Math.random().toString(36).slice(2), file, name: file.name, progress: 0, status: 'wait', error: '', localId: file.localId || '' };
     if (!AUDIO_EXT.test(file.name)) Object.assign(u, { status: 'error', error: 'Formato no compatible' });
     else if (file.size > state.maxMb * 1048576) Object.assign(u, { status: 'error', error: `Supera ${state.maxMb} MB` });
     state.uploads.push(u);
   }
-  if (state.view.name !== 'upload') go({ name: 'upload' });
-  else renderUploadList();
+  if (state.view.name === 'upload') renderUploadList();
+  else if (!stay) go({ name: 'upload' });
   pumpUploads();
 }
 
@@ -1440,6 +1446,7 @@ function pumpUploads() {
         if (addedInBatch) {
           toast(addedInBatch === 1 ? '1 canción añadida' : `${addedInBatch} canciones añadidas`);
           renderSide();
+          if (state.view.name !== 'upload') render();
         }
         addedInBatch = 0;
       }
@@ -1510,6 +1517,7 @@ function uploadOne(u) {
         u.status = 'done';
         setSongs([item.song, ...state.songs]);
       }
+      adoptLocal(u, item.song);
       touchUploadRow(u);
       resolve(!item.duplicate);
     };
@@ -1517,6 +1525,59 @@ function uploadOne(u) {
     form.append('files', u.file, u.name);
     xhr.send(form);
   });
+}
+
+/* ====== Canciones guardadas solo en el celular → enviarlas al servidor ====== */
+
+const localCount = () => (BUNDLED && !LOCAL && window.LocalLib ? window.LocalLib.count() : 0);
+
+// Una canción que se envió al servidor pasa a ser "guardada en el celular" con su nuevo identificador.
+async function adoptLocal(u, serverSong) {
+  if (!u.localId || !serverSong) return;
+  try {
+    const local = window.LocalLib.get(u.localId);
+    const { audio, cover } = await Offline.getBlobs(u.localId);
+    if (audio) await Offline.save(serverSong.id, audio, cover);
+    if (local?.favorite && !serverSong.favorite) {
+      await api(`/songs/${serverSong.id}`, { method: 'PATCH', body: { favorite: true } });
+      serverSong.favorite = true;
+    }
+    await window.LocalLib.discard(u.localId);
+    renderLocalBox();
+    refreshBadges();
+    if (serverSong.favorite) patchFavUI(serverSong.id);
+  } catch (err) {
+    console.warn('No se pudo terminar de mover la canción:', err);
+  }
+}
+
+async function sendLocalToServer({ quiet = false } = {}) {
+  const songs = window.LocalLib.songs().slice();
+  const files = [];
+  for (const s of songs) {
+    const { audio } = await Offline.getBlobs(s.id);
+    if (!audio) continue;
+    const name = `${[s.artist, s.title].filter(Boolean).join(' - ') || 'Canción'}${s.ext || '.mp3'}`.replace(/[\\/:*?"<>|]/g, '_');
+    const f = new File([audio], name, { type: audio.type || '' });
+    f.localId = s.id;
+    files.push(f);
+  }
+  if (!files.length) return quiet || toast('No hay canciones para enviar');
+  enqueueFiles(files, { stay: quiet });
+}
+
+function renderLocalBox() {
+  const box = $('#localBox');
+  if (!box) return;
+  const n = localCount();
+  box.hidden = !n;
+  if (!n) return;
+  setHtml(
+    box,
+    `<h3>Solo en este celular</h3>
+     <p class="muted small">Tienes <b>${plural(n, 'canción', 'canciones')}</b> que todavía no están en tu servidor. Envíalas para verlas también en la computadora y en tus otros dispositivos. Se quedan guardadas en el celular.</p>
+     <div class="conn-actions"><button class="btn primary" data-act="send-local">${icon('upload')} Enviar al servidor</button></div>`
+  );
 }
 
 /* ============================ Eventos de la interfaz ==================== */
@@ -1545,6 +1606,7 @@ $('#view').addEventListener('click', (e) => {
     case 'reload': location.reload(); break;
     case 'save-all': saveSongs(state.songs.map((x) => x.id)); break;
     case 'clear-offline': clearOffline(); break;
+    case 'send-local': sendLocalToServer(); break;
     case 'toggle-autosave':
       store.set('autosave', !store.get('autosave', false));
       renderOfflineBox();
@@ -1674,7 +1736,22 @@ async function startOffline() {
   return true;
 }
 
+async function announceLocal() {
+  if (!BUNDLED || LOCAL || !window.LocalLib || state.offline) return;
+  try {
+    await window.LocalLib.init();
+  } catch {
+    return;
+  }
+  const n = localCount();
+  if (!n) return;
+  // Las canciones que solo estaban en el celular se envían solas al servidor cada vez que se abre la app.
+  toast(n === 1 ? 'Enviando 1 canción del celular a tu servidor…' : `Enviando ${n} canciones del celular a tu servidor…`);
+  sendLocalToServer({ quiet: true });
+}
+
 function finishStart() {
+  announceLocal();
   syncPlayer();
   restoreLast();
   renderSide();
@@ -1704,7 +1781,7 @@ async function start() {
 // La app funciona sola en el celular: no hay servidor, todo está guardado dentro del teléfono.
 async function startLocal() {
   if (!Offline.supported) return showFatal('Este dispositivo no permite guardar música dentro de la app.');
-  await window.LocalLib.init();
+  await window.LocalLib.init(true);
   state.authRequired = false;
   state.maxMb = 2000;
   setSongs([...window.LocalLib.songs()]);

@@ -6,7 +6,7 @@
 
   const lib = { songs: [], playlists: [] };
   const newId = () => [...crypto.getRandomValues(new Uint8Array(6))].map((b) => b.toString(16).padStart(2, '0')).join('');
-  const persist = () => window.Offline.saveLibrary(lib.songs, lib.playlists);
+  const persist = () => window.Offline.saveMeta('locallib', { songs: lib.songs, playlists: lib.playlists });
   const clean = (v, max = 200) => (typeof v === 'string' ? v.trim().slice(0, max) : undefined);
 
   /* ------------------------------ Lectura de etiquetas ---------------------------- */
@@ -198,9 +198,10 @@
   }
 
   const api = {
-    async init() {
+    async init(migrate = false) {
       await window.Offline.ready;
-      const saved = await window.Offline.loadLibrary();
+      // La biblioteca del modo "solo celular" tiene su propio lugar. Si no existe aún, se aprovecha la versión anterior.
+      const saved = (await window.Offline.loadMeta('locallib')) || (migrate ? await window.Offline.loadLibrary() : null);
       const have = new Set(window.Offline.ids());
       lib.songs = (saved?.songs || []).filter((s) => have.has(s.id));
       const ids = new Set(lib.songs.map((s) => s.id));
@@ -208,6 +209,15 @@
       window.Offline.persist?.();
     },
     songs: () => lib.songs,
+    get: (id) => lib.songs.find((s) => s.id === id),
+    count: () => lib.songs.length,
+    // Quita una canción de la biblioteca del celular (por ejemplo, después de enviarla al servidor).
+    async discard(id, { keepFiles = false } = {}) {
+      lib.songs = lib.songs.filter((s) => s.id !== id);
+      for (const p of lib.playlists) p.songIds = p.songIds.filter((x) => x !== id);
+      if (!keepFiles) await window.Offline.remove(id).catch(() => {});
+      await persist();
+    },
     playlists: () => lib.playlists,
 
     async addFile(file) {

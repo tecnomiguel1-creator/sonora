@@ -92,6 +92,21 @@
     await saveIndex();
   };
 
+  // Devuelve { audio, cover } con los archivos guardados de una canción.
+  api.getBlobs = function (id) {
+    if (!db || !index.has(id)) return Promise.resolve({ audio: null, cover: null });
+    return new Promise((resolve) => {
+      const r = { audio: null, cover: null };
+      const tx = db.transaction(['audio', 'covers'], 'readonly');
+      const a = tx.objectStore('audio').get(id);
+      const c = tx.objectStore('covers').get(id);
+      a.onsuccess = () => (r.audio = a.result || null);
+      c.onsuccess = () => (r.cover = c.result || null);
+      tx.oncomplete = () => resolve(r);
+      tx.onerror = tx.onabort = () => resolve({ audio: null, cover: null });
+    });
+  };
+
   api.audioUrl = async function (id) {
     if (audioUrls.has(id)) return audioUrls.get(id);
     if (!db || !index.has(id)) return null;
@@ -133,6 +148,9 @@
   api.saveLibrary = (songs, playlists) =>
     db ? run('meta', 'readwrite', (tx) => tx.objectStore('meta').put({ songs, playlists, savedAt: Date.now() }, 'library')).catch(() => {}) : Promise.resolve();
   api.loadLibrary = () => (db ? run('meta', 'readonly', (tx) => tx.objectStore('meta').get('library')).catch(() => null) : Promise.resolve(null));
+
+  api.saveMeta = (key, value) => (db ? run('meta', 'readwrite', (tx) => tx.objectStore('meta').put(value, key)).catch(() => {}) : Promise.resolve());
+  api.loadMeta = (key) => (db ? run('meta', 'readonly', (tx) => tx.objectStore('meta').get(key)).catch(() => null) : Promise.resolve(null));
 
   // Pide al sistema que no borre estos datos por falta de espacio.
   api.persist = () => {

@@ -56,7 +56,7 @@ Nota: el navegador solo ofrece "instalar" completo cuando la dirección es `http
 En la pantalla de inicio de la app de Android pulsa **Usar solo en este celular**. Eliges las canciones de tu celular (varias a la vez) y quedan guardadas dentro de la app: suenan sin internet y con la computadora apagada. Se leen título, artista, álbum y carátula del archivo (MP3 y M4A); lo demás usa el nombre del archivo. Hay favoritas y listas, y funcionan igual que en el modo con servidor.
 
 - La música vive solo en ese celular: si desinstalas la app o borras sus datos, se pierde.
-- Para ver las mismas canciones en la PC hace falta un servidor (la PC con `iniciar.bat` o la nube). Desde **Subir música → Conectar con un servidor** puedes pasar a ese modo cuando quieras.
+- Para ver las mismas canciones en la PC hace falta un servidor (la PC con `iniciar.bat` o la nube). Desde **Subir música → Conectar con un servidor** puedes pasar a ese modo cuando quieras. Al conectarte, **las canciones que solo estaban en el celular se envían solas al servidor** (y también cada vez que abras la app, si quedó alguna pendiente). Siguen guardadas en el celular y conservan sus favoritas.
 - Sin servidor, las mejoras de la pantalla llegan solas desde GitHub al abrir la app con internet.
 
 ## Sonido y funciones extra
