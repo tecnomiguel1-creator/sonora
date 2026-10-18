@@ -48,6 +48,11 @@
 
   <section id="setup" hidden>
     <p class="sub">Tu música, sin anuncios.</p>
+    <div class="card" id="solo">
+      <button type="button" id="local" style="margin-top:0">Usar solo en este celular</button>
+      <p class="help">Sin computadora ni internet: eliges las canciones de tu celular y quedan guardadas dentro de la app. Es lo más fácil.</p>
+    </div>
+    <p class="sub" style="margin:18px 0 10px">o conéctala con tu computadora o la nube</p>
     <div class="card" id="finder">
       <button type="button" id="auto" style="margin-top:0">Buscar mi Sonora automáticamente</button>
       <p class="help" id="autoMsg">Solo para Sonora en tu computadora: con ella encendida y Sonora abierta, y el celular en el mismo Wi-Fi.</p>
@@ -67,8 +72,8 @@
   var KEY = 'sonora.server';
   var $ = function (id) { return document.getElementById(id); };
   var params = new URLSearchParams(location.search);
-  var saved = '';
-  try { saved = localStorage.getItem(KEY) || ''; } catch (e) {}
+  var saved = '', localMode = false;
+  try { saved = localStorage.getItem(KEY) || ''; localMode = localStorage.getItem('sonora.local') === '1'; } catch (e) {}
 
   function normalize(value) {
     value = (value || '').trim();
@@ -103,6 +108,7 @@
   function open(url) {
     try {
       if (localStorage.getItem(KEY) !== url) { localStorage.removeItem('sonora.token'); localStorage.removeItem('sonora.ui'); } // otro servidor: otra sesión y otra pantalla
+      localStorage.removeItem('sonora.local');
       localStorage.setItem(KEY, url);
     } catch (e) {}
     location.replace('app/start.html');
@@ -172,6 +178,17 @@
   }
   $('auto').addEventListener('click', autoSearch);
 
+  // Modo sin servidor: la biblioteca vive dentro del celular.
+  $('local').addEventListener('click', function () {
+    try {
+      localStorage.removeItem(KEY);
+      localStorage.removeItem('sonora.token');
+      localStorage.removeItem('sonora.ui');
+      localStorage.setItem('sonora.local', '1');
+    } catch (e) {}
+    location.replace('app/start.html');
+  });
+
   $('form').addEventListener('submit', function (e) {
     e.preventDefault();
     var url = normalize($('addr').value);
@@ -186,7 +203,7 @@
     });
   });
 
-  if (saved && !params.has('cambiar')) {
+  if ((saved || localMode) && !params.has('cambiar')) {
     // Ya hay servidor guardado: se abre directo. La app decide si hay conexión o si usa lo guardado en el celular.
     show('connecting');
     location.replace('app/start.html');

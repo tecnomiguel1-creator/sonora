@@ -73,6 +73,8 @@ const lsRaw = (k) => {
   }
 };
 const BASE = BUNDLED ? lsRaw('sonora.server').replace(/\/+$/, '') : '';
+// true cuando la app del celular funciona sola, sin servidor: la biblioteca vive dentro del teléfono.
+const LOCAL = BUNDLED && !BASE && lsRaw('sonora.local') === '1';
 let TOKEN = BUNDLED ? lsRaw('sonora.token') : '';
 const setToken = (t) => {
   TOKEN = t || '';
@@ -137,6 +139,7 @@ const coverEl = (s, { eq = false, cls = '' } = {}) =>
 /* ================================== API ================================= */
 
 async function api(path, { method = 'GET', body } = {}) {
+  if (LOCAL) return window.LocalLib.request(path, { method, body });
   const init = authInit({ method, credentials: 'same-origin', headers: {} });
   if (body !== undefined) {
     init.headers['Content-Type'] = 'application/json';
@@ -846,7 +849,7 @@ async function editSong(id) {
 
 async function deleteSong(id) {
   const s = songMap.get(id);
-  const ok = await confirmSheet({ title: 'Eliminar canción', text: `«${s.title}» se borrará de tu biblioteca y del servidor. No se puede deshacer.` });
+  const ok = await confirmSheet({ title: 'Eliminar canción', text: LOCAL ? `«${s.title}» se borrará de este celular. No se puede deshacer.` : `«${s.title}» se borrará de tu biblioteca y del servidor. No se puede deshacer.` });
   if (!ok) return;
   try {
     await api(`/songs/${id}`, { method: 'DELETE' });
@@ -915,7 +918,7 @@ function setSaveStatus(text) {
 
 // Marca con un ✓ las canciones guardadas, sin volver a dibujar la lista.
 function refreshBadges() {
-  for (const row of $$('#view .row')) row.classList.toggle('saved', Offline.has(row.dataset.id));
+  for (const row of $$('#view .row')) row.classList.toggle('saved', !LOCAL && Offline.has(row.dataset.id));
 }
 
 function renderOfflineBox() {
@@ -923,6 +926,15 @@ function renderOfflineBox() {
   if (!box) return;
   const n = Offline.count();
   const auto = store.get('autosave', false);
+  if (LOCAL) {
+    return setHtml(
+      box,
+      `<h3>En este celular</h3>
+       <p class="muted small">Tu música se guarda dentro del celular y suena sin internet ni computadora. Si desinstalas la app o borras sus datos, se pierde.</p>
+       <p class="muted small">Guardadas: <b>${plural(n, 'canción', 'canciones')}</b>${n ? ` · ${fmtBytes(Offline.bytes())}` : ''}</p>
+       <div class="conn-actions">${n ? `<button class="btn ghost" data-act="clear-offline">${icon('trash')} Borrar toda la música</button>` : ''}</div>`
+    );
+  }
   setHtml(
     box,
     `<h3>Sin conexión</h3>
@@ -998,8 +1010,27 @@ async function unsaveSong(id) {
 }
 
 async function clearOffline() {
-  const ok = await confirmSheet({ title: 'Borrar canciones guardadas', text: 'Se borrarán las copias que están en el celular. Tu biblioteca en el servidor no se toca.' });
+  const ok = await confirmSheet({
+    title: LOCAL ? 'Borrar toda la música' : 'Borrar canciones guardadas',
+    text: LOCAL ? 'Se borrarán TODAS las canciones y listas de este celular. No se puede deshacer.' : 'Se borrarán las copias que están en el celular. Tu biblioteca en el servidor no se toca.'
+  });
   if (!ok) return;
+  if (LOCAL) {
+    await window.LocalLib.clearAll().catch(() => {});
+    setSongs([]);
+    state.playlists = [];
+    state.baseQueue = [];
+    state.queue = [];
+    state.index = -1;
+    audio.pause();
+    audio.removeAttribute('src');
+    audio.load();
+    state.current = null;
+    syncPlayer();
+    renderSide();
+    render();
+    return toast('Se borró toda la música');
+  }
   await Offline.clear().catch(() => {});
   if (state.offline) {
     setSongs([]);
@@ -1016,7 +1047,7 @@ async function clearOffline() {
 
 // Con "guardar las nuevas solas" activado, al abrir la app se guardan las canciones que falten.
 function maybeAutoSave() {
-  if (!BUNDLED || state.offline || !Offline.supported || !store.get('autosave', false) || !wifiOk()) return;
+  if (!BUNDLED || LOCAL || state.offline || !Offline.supported || !store.get('autosave', false) || !wifiOk()) return;
   saveSongs(state.songs.map((s) => s.id), { silent: true });
 }
 
@@ -1116,7 +1147,7 @@ function songMenu(id, ctx) {
     { icon: 'heart', label: s.favorite ? 'Quitar de favoritas' : 'Añadir a favoritas', run: () => toggleFav(id) },
     ...(ctx?.type === 'playlist' ? [{ icon: 'x', label: 'Quitar de esta lista', run: () => removeFromPlaylist(ctx.id, id) }] : []),
     { icon: 'edit', label: 'Editar información', run: () => editSong(id) },
-    ...(BUNDLED && Offline.supported
+    ...(BUNDLED && Offline.supported && !LOCAL
       ? [Offline.has(id) ? { icon: 'x', label: 'Quitar del celular', run: () => unsaveSong(id) } : { icon: 'download', label: 'Guardar en el celular', run: () => saveSongs([id]) }]
       : []),
     ...(inApp ? [] : [{ icon: 'download', label: 'Descargar', run: () => downloadSong(id) }]),
@@ -1171,7 +1202,7 @@ function go(view) {
 }
 
 const cacheLibrary = debounce(() => {
-  if (BUNDLED && !state.offline && state.songs.length) Offline.saveLibrary(state.songs, state.playlists);
+  if (BUNDLED && !LOCAL && !state.offline && state.songs.length) Offline.saveLibrary(state.songs, state.playlists);
 }, 800);
 
 function render() {
@@ -1218,7 +1249,7 @@ function renderEmptyLibrary(root) {
 
 function rowHtml(s) {
   return `
-    <li class="row${Offline.has(s.id) ? ' saved' : ''}" data-id="${s.id}">
+    <li class="row${!LOCAL && Offline.has(s.id) ? ' saved' : ''}" data-id="${s.id}">
       <button class="row-main" data-act="play" aria-label="Reproducir ${esc(s.title)}">
         ${coverEl(s, { eq: true })}
         <span class="meta"><span class="t">${esc(s.title)}</span><span class="s">${esc(artistOf(s))}${s.album ? ` · ${esc(s.album)}` : ''}</span></span>
@@ -1303,22 +1334,22 @@ function renderUpload(root) {
   state.visible = [];
   const touch = matchMedia('(hover: none)').matches;
   root.innerHTML = `
-    <div class="head"><div class="head-text"><h1>Subir música</h1><p class="sub">Añade canciones a tu biblioteca. Quedarán guardadas en tu servidor y disponibles en todos tus dispositivos.</p></div></div>
+    <div class="head"><div class="head-text"><h1>Subir música</h1><p class="sub">${LOCAL ? 'Añade canciones a tu biblioteca. Quedarán guardadas en este celular y suenan sin internet ni computadora.' : 'Añade canciones a tu biblioteca. Quedarán guardadas en tu servidor y disponibles en todos tus dispositivos.'}</p></div></div>
     <div class="drop" id="drop">
       <div class="drop-ico">${icon('upload')}</div>
       <h2>Sube tu música</h2>
       <p>${touch ? 'Elige las canciones que tienes en tu celular. Puedes seleccionar varias a la vez.' : 'Arrastra tus archivos aquí o elige canciones de tu computadora.'}</p>
       <button class="btn primary lg" data-act="pick-files">${icon('plus')} Elegir canciones</button>
-      <small>MP3, M4A, AAC, FLAC, OGG, OPUS y WAV · hasta ${state.maxMb} MB por archivo</small>
+      <small>MP3, M4A, AAC, FLAC, OGG, OPUS y WAV${LOCAL ? '' : ` · hasta ${state.maxMb} MB por archivo`}</small>
     </div>
     <div id="uploadList"></div>
     ${inApp || state.authRequired || onThisPc
       ? `<section class="conn">
           <h3>Conexión</h3>
-          <p class="muted small">Servidor: ${esc(BUNDLED ? BASE.replace(/^https?:\/\//, '') : location.host)}</p>
+          <p class="muted small">${LOCAL ? 'Modo: solo en este celular (sin servidor)' : `Servidor: ${esc(BUNDLED ? BASE.replace(/^https?:\/\//, '') : location.host)}`}</p>
           ${onThisPc ? `<div id="lanInfo" class="lan" hidden></div>` : ''}
           <div class="conn-actions">
-            ${inApp ? `<button class="btn ghost" data-act="change-server">${icon('edit')} Cambiar servidor</button>` : ''}
+            ${inApp ? `<button class="btn ghost" data-act="change-server">${icon('edit')} ${LOCAL ? 'Conectar con un servidor' : 'Cambiar servidor'}</button>` : ''}
             ${state.authRequired ? `<button class="btn ghost" data-act="logout">${icon('logout')} Cerrar sesión</button>` : ''}
           </div>
         </section>`
@@ -1420,6 +1451,29 @@ function uploadOne(u) {
   return new Promise((resolve) => {
     u.status = 'up';
     touchUploadRow(u);
+    if (LOCAL) {
+      // Sin servidor: la canción se guarda directo dentro del celular.
+      u.status = 'proc';
+      touchUploadRow(u);
+      window.LocalLib.addFile(u.file).then(
+        ({ song, duplicate }) => {
+          u.progress = 1;
+          if (duplicate) u.status = 'dup';
+          else {
+            u.status = 'done';
+            setSongs([song, ...state.songs]);
+          }
+          touchUploadRow(u);
+          resolve(!duplicate);
+        },
+        (err) => {
+          Object.assign(u, { status: 'error', error: err?.name === 'QuotaExceededError' ? 'No hay espacio en el celular' : err?.message || 'No se pudo guardar' });
+          touchUploadRow(u);
+          resolve(false);
+        }
+      );
+      return;
+    }
     const xhr = new XMLHttpRequest();
     xhr.open('POST', `${BASE}/api/upload`);
     if (BUNDLED && TOKEN) xhr.setRequestHeader('Authorization', `Bearer ${TOKEN}`);
@@ -1647,11 +1701,25 @@ async function start() {
   finishStart();
 }
 
+// La app funciona sola en el celular: no hay servidor, todo está guardado dentro del teléfono.
+async function startLocal() {
+  if (!Offline.supported) return showFatal('Este dispositivo no permite guardar música dentro de la app.');
+  await window.LocalLib.init();
+  state.authRequired = false;
+  state.maxMb = 2000;
+  setSongs([...window.LocalLib.songs()]);
+  state.playlists = [...window.LocalLib.playlists()];
+  $('#login').hidden = true;
+  $('#app').hidden = false;
+  finishStart();
+}
+
 async function boot() {
   initMediaSession();
   syncPlayer();
   if (BUNDLED) {
     await Offline.ready;
+    if (LOCAL) return startLocal();
     if (!BASE) return void (location.href = '../index.html?cambiar=1'); // todavía no se eligió servidor
   }
   let session;

@@ -25,6 +25,28 @@
   if (stored && !(stored.files && stored.files['index.html'] && stored.files['app.js'])) stored = null;
 
   function fallback() { location.replace('index.html'); }
+
+  // Sin servidor (modo "solo en este celular"): las pantallas nuevas se bajan del repositorio de GitHub.
+  var GH = 'tecnomiguel1-creator/sonora';
+  var FILES = ['index.html', 'styles.css', 'offline.js', 'audio-fx.js', 'local.js', 'app.js'];
+  function timed(url, ms, opts, asText) {
+    var ctrl = new AbortController();
+    var timer = setTimeout(function () { ctrl.abort(); }, ms);
+    opts = opts || {}; opts.signal = ctrl.signal; opts.cache = 'no-store';
+    return fetch(url, opts).then(function (r) { clearTimeout(timer); if (!r.ok) throw new Error('http'); return r.text(); });
+  }
+  function fetchGithub(ms) {
+    return timed('https://api.github.com/repos/' + GH + '/commits/main', ms, { headers: { Accept: 'application/vnd.github.sha' } }).then(function (sha) {
+      sha = sha.trim();
+      if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error('sha');
+      if (stored && stored.version === sha) return stored;
+      return Promise.all(FILES.map(function (f) { return timed('https://raw.githubusercontent.com/' + GH + '/' + sha + '/public/' + f, 10000); })).then(function (texts) {
+        var files = {};
+        FILES.forEach(function (f, i) { files[f] = texts[i]; });
+        return { version: sha, files: files };
+      });
+    });
+  }
   function save(b) { try { localStorage.setItem(KEY, JSON.stringify(b)); } catch (e) {} }
   function blobUrl(text, type) { return URL.createObjectURL(new Blob([text], { type: type })); }
 
@@ -44,12 +66,14 @@
     var css = blobUrl(f['styles.css'], 'text/css');
     var off = blobUrl(f['offline.js'], 'text/javascript');
     var app = blobUrl(f['app.js'], 'text/javascript');
+    var loc = f['local.js'] ? blobUrl(f['local.js'], 'text/javascript') : '';
     var fx = f['audio-fx.js'] ? blobUrl(f['audio-fx.js'], 'text/javascript') : '';
     var html = f['index.html']
       .replace(/<link rel="manifest"[^>]*>\s*/g, '')
       .replace('href="/styles.css"', 'href="' + css + '"')
       .replace('<script src="/offline.js"><\/script>', '<script src="bundle-config.js"><\/script>\n<script src="' + off + '"><\/script>')
       .replace('<script src="/audio-fx.js"><\/script>', fx ? '<script src="' + fx + '"><\/script>' : '')
+      .replace('<script src="/local.js"><\/script>', loc ? '<script src="' + loc + '"><\/script>' : '')
       .replace('<script type="module" src="/app.js"><\/script>', '<script type="module" src="' + app + '"><\/script>')
       .replace(/(href|src)="\/(?!\/)/g, '$1="');
     document.open();
@@ -57,13 +81,14 @@
     document.close();
   }
 
-  if (!base || params.has('copia')) return fallback();
+  var latest = base ? fetchBundle : ls('sonora.local') === '1' ? fetchGithub : null;
+  if (!latest || params.has('copia')) return fallback();
 
   if (stored) {
     // Ya hay una pantalla guardada: se usa enseguida, y si el servidor tiene una más nueva se usa esa.
     if (navigator.onLine === false) return run(stored);
     var settled = false;
-    fetchBundle(2000).then(
+    latest(2000).then(
       function (b) {
         if (settled) return;
         settled = true;
@@ -72,7 +97,7 @@
       function () { if (!settled) { settled = true; run(stored); } }
     );
   } else {
-    fetchBundle(6000).then(function (b) { save(b); run(b); }, fallback);
+    latest(6000).then(function (b) { save(b); run(b); }, fallback);
   }
 })();
 </script>

@@ -51,6 +51,14 @@ En tu celular (misma red Wi-Fi):  http://192.168.1.25:3000
 
 Nota: el navegador solo ofrece "instalar" completo cuando la dirección es `https://` o `localhost`. Con `http://192.168...` funciona igual, pero se añade como acceso directo. Para tener HTTPS fácil, mira la sección siguiente.
 
+## Sonora solo en el celular (sin computadora ni servidor)
+
+En la pantalla de inicio de la app de Android pulsa **Usar solo en este celular**. Eliges las canciones de tu celular (varias a la vez) y quedan guardadas dentro de la app: suenan sin internet y con la computadora apagada. Se leen título, artista, álbum y carátula del archivo (MP3 y M4A); lo demás usa el nombre del archivo. Hay favoritas y listas, y funcionan igual que en el modo con servidor.
+
+- La música vive solo en ese celular: si desinstalas la app o borras sus datos, se pierde.
+- Para ver las mismas canciones en la PC hace falta un servidor (la PC con `iniciar.bat` o la nube). Desde **Subir música → Conectar con un servidor** puedes pasar a ese modo cuando quieras.
+- Sin servidor, las mejoras de la pantalla llegan solas desde GitHub al abrir la app con internet.
+
 ## Sonido y funciones extra
 
 Toca el botón de **ajustes de sonido** (el de las rayitas, junto al volumen en la PC, o arriba en la pantalla del reproductor en el celular):
