@@ -291,7 +291,7 @@ input[type=range]::-moz-range-thumb { width: 12px; height: 12px; border: 0; bord
   transform: translateY(104%); visibility: hidden; transition: transform .4s cubic-bezier(.2, .8, .2, 1), visibility 0s .4s;
 }
 .np.open { transform: none; visibility: visible; transition: transform .4s cubic-bezier(.2, .8, .2, 1); }
-.np-top { display: flex; align-items: center; justify-content: space-between; width: 100%; max-width: 1040px; margin: 0 auto; }
+.np-top { display: flex; align-items: center; justify-content: space-between; gap: 4px; width: 100%; max-width: 1040px; margin: 0 auto; }
 .np-label { font-size: 12.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
 .np-inner { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr); align-content: center; gap: 24px; width: 100%; max-width: 1040px; margin: 0 auto; padding: 8px 0; }
 .np-main { display: flex; flex-direction: column; gap: 22px; width: 100%; max-width: 440px; margin: 0 auto; }
@@ -428,3 +428,22 @@ input[type=range]::-moz-range-thumb { width: 12px; height: 12px; border: 0; bord
 .offline-bar button { flex: none; padding: 8px 14px; border-radius: 999px; background: var(--surface2); color: var(--text); font-weight: 700; font-size: 13px; }
 .row.saved .meta .s::before { content: ""; display: inline-block; width: 12px; height: 12px; margin-right: 5px; vertical-align: -1px; background: #ff6a3d; -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E") center / contain no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E") center / contain no-repeat; }
 #offlineBox p { margin: 6px 0 0; }
+
+/* ---------- Sonido (amplificador, ecualizador, temporizador) ---------- */
+.fx { display: flex; flex-direction: column; gap: 18px; padding: 6px 6px 2px; }
+.fx h3 { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 700; margin-bottom: 8px; }
+.fx-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-weight: 600; }
+.fx-row output { color: var(--accent); font-variant-numeric: tabular-nums; font-weight: 700; }
+.fx .note { color: var(--muted); font-size: 13px; margin-top: 6px; }
+.fx .note.warn { color: var(--danger); }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { padding: 8px 14px; border-radius: 999px; background: var(--surface2); font-weight: 600; font-size: 13.5px; color: var(--text); }
+.chip:hover { background: var(--surface3); }
+.chip.on { background: var(--grad); color: #1c0a06; }
+.fxeq { display: grid; gap: 4px; margin-top: 12px; }
+.fxeq label { display: grid; grid-template-columns: 62px 1fr 44px; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); }
+.fxeq output { text-align: right; font-variant-numeric: tabular-nums; color: var(--text); }
+.fx-switch { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-weight: 600; }
+.fx-switch input { width: 20px; height: 20px; accent-color: var(--accent); }
+.fx-keys { color: var(--faint); font-size: 12.5px; line-height: 1.6; }
+.fx-keys kbd { background: var(--surface2); border-radius: 5px; padding: 1px 6px; font: inherit; color: var(--muted); }

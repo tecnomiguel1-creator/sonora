@@ -44,10 +44,12 @@
     var css = blobUrl(f['styles.css'], 'text/css');
     var off = blobUrl(f['offline.js'], 'text/javascript');
     var app = blobUrl(f['app.js'], 'text/javascript');
+    var fx = f['audio-fx.js'] ? blobUrl(f['audio-fx.js'], 'text/javascript') : '';
     var html = f['index.html']
       .replace(/<link rel="manifest"[^>]*>\s*/g, '')
       .replace('href="/styles.css"', 'href="' + css + '"')
       .replace('<script src="/offline.js"><\/script>', '<script src="bundle-config.js"><\/script>\n<script src="' + off + '"><\/script>')
+      .replace('<script src="/audio-fx.js"><\/script>', fx ? '<script src="' + fx + '"><\/script>' : '')
       .replace('<script type="module" src="/app.js"><\/script>', '<script type="module" src="' + app + '"><\/script>')
       .replace(/(href|src)="\/(?!\/)/g, '$1="');
     document.open();

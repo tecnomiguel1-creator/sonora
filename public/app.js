@@ -119,6 +119,8 @@ const state = {
 };
 const songMap = new Map();
 const audio = $('#audio');
+// En la app del celular la música viene de otro origen: sin esto el amplificador no podría procesarla.
+if (BUNDLED) audio.crossOrigin = 'anonymous';
 
 const setSongs = (list) => {
   state.songs = list;
@@ -296,6 +298,7 @@ function loadCurrent(autoplay = true, startAt = 0) {
   const useSrc = (src) => {
     if (state.current !== song) return; // ya se eligió otra canción mientras tanto
     audio.src = src;
+    AudioFX.reapplySpeed();
     if (startAt > 0) audio.addEventListener('loadedmetadata', () => (audio.currentTime = startAt), { once: true });
     if (autoplay) {
       const p = audio.play();
@@ -572,6 +575,7 @@ function initMediaSession() {
 
 /* Eventos del elemento de audio */
 audio.addEventListener('play', () => {
+  AudioFX.attach(audio);
   syncPlayer();
   if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
 });
@@ -583,7 +587,13 @@ audio.addEventListener('pause', () => {
 audio.addEventListener('playing', () => setLoading(false));
 audio.addEventListener('canplay', () => !audio.paused && setLoading(false));
 audio.addEventListener('waiting', () => !audio.paused && setLoading(true));
-audio.addEventListener('ended', () => next(true));
+audio.addEventListener('ended', () => {
+  if (AudioFX.consumeSongEnd()) {
+    toast('Temporizador: música detenida');
+    return;
+  }
+  next(true);
+});
 audio.addEventListener('timeupdate', updateProgress);
 audio.addEventListener('loadedmetadata', updateProgress);
 audio.addEventListener('durationchange', updateProgress);
@@ -664,6 +674,105 @@ function syncVolumeIcon() {
   $('#muteBtn').innerHTML = icon(audio.muted || audio.volume === 0 ? 'mute' : 'volume');
 }
 
+
+/* Sonido: amplificador, ecualizador, velocidad y temporizador */
+const SPEEDS = [0.75, 1, 1.25, 1.5, 2];
+const SLEEPS = [
+  { v: 0, t: 'Apagado' },
+  { v: 15, t: '15 min' },
+  { v: 30, t: '30 min' },
+  { v: 45, t: '45 min' },
+  { v: 60, t: '1 hora' },
+  { v: 'end', t: 'Al terminar la canción' }
+];
+function soundSheetHtml() {
+  const c = AudioFX.get();
+  const sl = AudioFX.sleepState();
+  const chip = (act, val, text, on) => `<button class="chip ${on ? 'on' : ''}" data-fx="${act}" data-v="${val}">${esc(text)}</button>`;
+  return `<h2>Sonido</h2>
+  <div class="fx">
+    <section>
+      <div class="fx-row"><span>Amplificador</span><output id="fxBoostV">${c.boost}%</output></div>
+      <input type="range" id="fxBoost" min="100" max="300" step="5" value="${c.boost}" style="--p:${(c.boost - 100) / 2}%" aria-label="Amplificador de volumen">
+      <p class="note ${c.boost > 200 ? 'warn' : ''}" id="fxBoostN">${c.boost > 200 ? 'Muy alto: puede dañar tus oídos o las bocinas. Bájalo si se escucha raro.' : 'Sube el volumen más allá del máximo del dispositivo. Usa con cuidado.'}</p>
+    </section>
+    <section>
+      <h3>Ecualizador</h3>
+      <div class="chips" id="fxPresets">${Object.entries(AudioFX.PRESETS).map(([k, p]) => chip('preset', k, p.name, c.preset === k)).join('')}</div>
+      <div class="fxeq">${AudioFX.BAND_LABELS.map(
+        (l, i) => `<label><span>${l}</span><input type="range" data-band="${i}" min="-12" max="12" step="1" value="${c.eq[i]}" style="--p:${((c.eq[i] + 12) / 24) * 100}%" aria-label="${l}"><output>${c.eq[i] > 0 ? '+' : ''}${c.eq[i]} dB</output></label>`
+      ).join('')}</div>
+    </section>
+    <section>
+      <h3>Velocidad</h3>
+      <div class="chips" id="fxSpeeds">${SPEEDS.map((v) => chip('speed', v, v === 1 ? 'Normal' : `${v}×`, c.speed === v)).join('')}</div>
+    </section>
+    <section>
+      <h3>Temporizador de apagado</h3>
+      <div class="chips" id="fxSleeps">${SLEEPS.map((o) => chip('sleep', o.v, o.t, o.v === 0 ? !sl.on : o.v === 'end' ? sl.atSongEnd : sl.minutes && o.v === sl.minutes)).join('')}</div>
+      <p class="note" id="fxSleepN">${sl.minutes ? `La música se detendrá en unos ${sl.minutes} min.` : sl.atSongEnd ? 'La música se detendrá cuando termine esta canción.' : ''}</p>
+    </section>
+    <label class="fx-switch"><span>Proteger de la distorsión (limitador)</span><input type="checkbox" id="fxLimiter" ${c.limiter ? 'checked' : ''}></label>
+    <p class="fx-keys">Teclado: <kbd>Espacio</kbd> pausa · <kbd>←</kbd> <kbd>→</kbd> ±10 s · <kbd>↑</kbd> <kbd>↓</kbd> volumen · <kbd>M</kbd> silencio · <kbd>N</kbd> siguiente · <kbd>P</kbd> anterior</p>
+    <div class="sheet-actions"><button class="btn ghost" data-fx="reset">Restablecer</button><button class="btn primary" data-fx="close">Listo</button></div>
+  </div>`;
+}
+function openSoundSheet() {
+  if (!AudioFX.supported) return toast('Este navegador no permite ajustar el sonido');
+  openSheet(soundSheetHtml());
+  const ping = () => AudioFX.attach(audio); // por si todavía no se ha reproducido nada
+  if (!audio.paused) ping();
+}
+const syncSheetChips = (sel, attr, val) =>
+  $$(`${sel} .chip`, sheet).forEach((b) => b.classList.toggle('on', String(b.dataset[attr]) === String(val)));
+sheet.addEventListener('input', (e) => {
+  const t = e.target;
+  if (t.id === 'fxBoost') {
+    AudioFX.setBoost(Number(t.value));
+    const v = Number(t.value);
+    t.style.setProperty('--p', `${(v - 100) / 2}%`);
+    $('#fxBoostV', sheet).textContent = `${v}%`;
+    const n = $('#fxBoostN', sheet);
+    n.classList.toggle('warn', v > 200);
+    n.textContent = v > 200 ? 'Muy alto: puede dañar tus oídos o las bocinas. Bájalo si se escucha raro.' : 'Sube el volumen más allá del máximo del dispositivo. Usa con cuidado.';
+  } else if (t.dataset.band !== undefined) {
+    const i = Number(t.dataset.band);
+    const v = Number(t.value);
+    AudioFX.setBand(i, v);
+    t.style.setProperty('--p', `${((v + 12) / 24) * 100}%`);
+    t.nextElementSibling.textContent = `${v > 0 ? '+' : ''}${v} dB`;
+    syncSheetChips('#fxPresets', 'v', AudioFX.get().preset);
+  }
+});
+sheet.addEventListener('change', (e) => {
+  if (e.target.id === 'fxLimiter') AudioFX.setLimiter(e.target.checked);
+});
+sheet.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-fx]');
+  if (!b) return;
+  const { fx, v } = b.dataset;
+  if (fx === 'close') sheet.close();
+  else if (fx === 'reset') {
+    AudioFX.reset();
+    AudioFX.setSleep(0);
+    openSheet(soundSheetHtml());
+  } else if (fx === 'preset') {
+    AudioFX.setPreset(v);
+    openSheet(soundSheetHtml());
+  } else if (fx === 'speed') {
+    AudioFX.setSpeed(Number(v));
+    syncSheetChips('#fxSpeeds', 'v', v);
+  } else if (fx === 'sleep') {
+    const val = v === 'end' ? 'end' : Number(v);
+    AudioFX.setSleep(val, () => audio.pause());
+    syncSheetChips('#fxSleeps', 'v', v);
+    const sl = AudioFX.sleepState();
+    $('#fxSleepN', sheet).textContent = sl.minutes ? `La música se detendrá en unos ${sl.minutes} min.` : sl.atSongEnd ? 'La música se detendrá cuando termine esta canción.' : '';
+  }
+});
+$('#fxBtn').addEventListener('click', openSoundSheet);
+$('#npFx').addEventListener('click', openSoundSheet);
+
 /* Atajos de teclado (computadora) */
 document.addEventListener('keydown', (e) => {
   if (e.target.closest?.('input, textarea, select, dialog')) return;
@@ -673,6 +782,13 @@ document.addEventListener('keydown', (e) => {
     togglePlay();
   } else if (e.key === 'ArrowRight') audio.currentTime = Math.min(audio.duration || Infinity, audio.currentTime + 10);
   else if (e.key === 'ArrowLeft') audio.currentTime = Math.max(0, audio.currentTime - 10);
+  else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+    e.preventDefault();
+    vol.value = Math.min(100, Math.max(0, Number(vol.value) + (e.key === 'ArrowUp' ? 5 : -5)));
+    vol.dispatchEvent(new Event('input'));
+  } else if (e.key === 'm' || e.key === 'M') $('#muteBtn').click();
+  else if (e.key === 'n' || e.key === 'N') next();
+  else if (e.key === 'p' || e.key === 'P') prev();
   else if (e.key === 'Escape') openNowPlaying(false);
 });
 
@@ -1182,7 +1298,6 @@ function renderSide() {
 /* ---------------------------------- Subida ---------------------------------- */
 
 const AUDIO_EXT = /\.(mp3|m4a|aac|flac|ogg|oga|opus|wav)$/i;
-let uploading = false;
 
 function renderUpload(root) {
   state.visible = [];
@@ -1277,18 +1392,27 @@ function enqueueFiles(fileList) {
   pumpUploads();
 }
 
-async function pumpUploads() {
-  if (uploading) return;
-  uploading = true;
-  let added = 0;
-  let u;
-  while ((u = state.uploads.find((x) => x.status === 'wait'))) {
-    if (await uploadOne(u)) added += 1;
-  }
-  uploading = false;
-  if (added) {
-    toast(added === 1 ? '1 canción añadida' : `${added} canciones añadidas`);
-    renderSide();
+const MAX_PARALLEL = 3; // canciones que se suben al mismo tiempo
+let activeUploads = 0;
+let addedInBatch = 0;
+function pumpUploads() {
+  while (activeUploads < MAX_PARALLEL) {
+    const u = state.uploads.find((x) => x.status === 'wait');
+    if (!u) break;
+    u.status = 'up';
+    activeUploads += 1;
+    uploadOne(u).then((ok) => {
+      activeUploads -= 1;
+      if (ok) addedInBatch += 1;
+      if (state.uploads.some((x) => x.status === 'wait')) return pumpUploads();
+      if (activeUploads === 0) {
+        if (addedInBatch) {
+          toast(addedInBatch === 1 ? '1 canción añadida' : `${addedInBatch} canciones añadidas`);
+          renderSide();
+        }
+        addedInBatch = 0;
+      }
+    });
   }
 }
 

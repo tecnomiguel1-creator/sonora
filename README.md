@@ -51,6 +51,17 @@ En tu celular (misma red Wi-Fi):  http://192.168.1.25:3000
 
 Nota: el navegador solo ofrece "instalar" completo cuando la dirección es `https://` o `localhost`. Con `http://192.168...` funciona igual, pero se añade como acceso directo. Para tener HTTPS fácil, mira la sección siguiente.
 
+## Sonido y funciones extra
+
+Toca el botón de **ajustes de sonido** (el de las rayitas, junto al volumen en la PC, o arriba en la pantalla del reproductor en el celular):
+
+- **Amplificador:** sube el volumen hasta 300 % por encima del máximo. Con más de 200 % puede distorsionar o dañar las bocinas.
+- **Ecualizador** de 5 bandas con modos listos (Más graves, Voces, Rock, Pop, Electrónica…).
+- **Velocidad** de reproducción (0,75× a 2×) y **temporizador de apagado** (15 min a 1 hora, o al terminar la canción) con bajada suave de volumen.
+- **Limitador** para evitar la distorsión al amplificar.
+- **Teclado (PC):** Espacio pausa, flechas ← → saltan 10 s, ↑ ↓ cambian el volumen, M silencia, N siguiente, P anterior.
+- **Subida múltiple:** puedes elegir muchas canciones a la vez (o arrastrarlas); se suben 3 al mismo tiempo para ir más rápido, y las repetidas se detectan solas.
+
 ## App de escritorio para Windows
 
 Es Sonora en su **propia ventana**, con ícono, sin navegador y sin la ventana negra. Ya incluye el servidor: al abrirla, tu música queda disponible también para el celular.

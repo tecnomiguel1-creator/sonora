@@ -201,7 +201,7 @@ app.post('/api/logout', (req, res) => {
 
 // La app del celular lleva una copia de la pantalla, pero al abrirse con conexión baja de aquí la versión
 // más reciente (así los cambios de diseño llegan sin reinstalar el APK).
-const UI_FILES = ['index.html', 'styles.css', 'offline.js', 'app.js'];
+const UI_FILES = ['index.html', 'styles.css', 'offline.js', 'audio-fx.js', 'app.js'];
 let uiCache = { key: '', body: null };
 app.get('/ui-bundle.json', (req, res) => {
   try {
@@ -344,10 +344,25 @@ function sha1File(file) {
   });
 }
 
+// Canciones que se están procesando ahora mismo: evita duplicados cuando se suben varias a la vez.
+const inFlight = new Map();
+
 async function ingest(file) {
   const originalName = fixName(file.originalname);
-  const ext = path.extname(originalName).toLowerCase();
   const hash = await sha1File(file.path);
+  const prev = inFlight.get(hash);
+  if (prev) await prev.catch(() => {});
+  const job = ingestOne(file, originalName, hash);
+  inFlight.set(hash, job);
+  try {
+    return await job;
+  } finally {
+    if (inFlight.get(hash) === job) inFlight.delete(hash);
+  }
+}
+
+async function ingestOne(file, originalName, hash) {
+  const ext = path.extname(originalName).toLowerCase();
 
   const duplicate = db.songs.find((s) => s.hash === hash);
   if (duplicate) {
