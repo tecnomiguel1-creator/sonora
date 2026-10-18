@@ -140,6 +140,9 @@ const coverEl = (s, { eq = false, cls = '' } = {}) =>
 
 async function api(path, { method = 'GET', body } = {}) {
   if (LOCAL) return window.LocalLib.request(path, { method, body });
+  // Sin conexión con el servidor: las canciones que solo están en el celular se siguen pudiendo editar y borrar.
+  const localId = state.offline && window.LocalLib ? (path.match(/^\/songs\/([a-f0-9]+)$/) || [])[1] : '';
+  if (localId && window.LocalLib.get(localId)) return window.LocalLib.request(path, { method, body });
   const init = authInit({ method, credentials: 'same-origin', headers: {} });
   if (body !== undefined) {
     init.headers['Content-Type'] = 'application/json';
@@ -1061,7 +1064,7 @@ function showOfflineBar() {
     bar = document.createElement('div');
     bar.id = 'offlineBar';
     bar.className = 'offline-bar';
-    bar.innerHTML = '<span>Sin conexión con tu servidor. Se muestran solo las canciones guardadas en el celular.</span><button type="button">Reintentar</button>';
+    bar.innerHTML = '<span>Sin conexión con tu servidor. Se ven las canciones guardadas en el celular. Si añades música, se enviará sola cuando te conectes.</span><button type="button">Reintentar</button>';
     bar.querySelector('button').addEventListener('click', () => location.reload());
     $('.topbar').after(bar);
   }
@@ -1458,8 +1461,8 @@ function uploadOne(u) {
   return new Promise((resolve) => {
     u.status = 'up';
     touchUploadRow(u);
-    if (LOCAL) {
-      // Sin servidor: la canción se guarda directo dentro del celular.
+    if (LOCAL || state.offline) {
+      // Sin servidor (o sin conexión con él): la canción se guarda dentro del celular y se envía cuando haya conexión.
       u.status = 'proc';
       touchUploadRow(u);
       window.LocalLib.addFile(u.file).then(
@@ -1529,7 +1532,7 @@ function uploadOne(u) {
 
 /* ====== Canciones guardadas solo en el celular → enviarlas al servidor ====== */
 
-const localCount = () => (BUNDLED && !LOCAL && window.LocalLib ? window.LocalLib.count() : 0);
+const localCount = () => (BUNDLED && !LOCAL && !state.offline && window.LocalLib ? window.LocalLib.count() : 0);
 
 // Una canción que se envió al servidor pasa a ser "guardada en el celular" con su nuevo identificador.
 async function adoptLocal(u, serverSong) {
@@ -1724,12 +1727,22 @@ async function startOffline() {
   if (!BUNDLED || !Offline.supported) return false;
   await Offline.ready;
   const lib = await Offline.loadLibrary();
-  const saved = (lib?.songs || []).filter((s) => Offline.has(s.id));
+  const have0 = (lib?.songs || []).filter((s) => Offline.has(s.id));
+  // Canciones añadidas en el celular que todavía no se enviaron al servidor.
+  let pending = [];
+  try {
+    await window.LocalLib.init();
+    pending = window.LocalLib.songs().filter((s) => Offline.has(s.id));
+  } catch {
+    /* sin biblioteca local */
+  }
+  const known = new Set(have0.map((s) => s.id));
+  const saved = [...pending.filter((s) => !known.has(s.id)), ...have0];
   if (!saved.length) return false;
   state.offline = true;
   setSongs(saved);
   const have = new Set(saved.map((s) => s.id));
-  state.playlists = (lib.playlists || []).map((p) => ({ ...p, songIds: (p.songIds || []).filter((id) => have.has(id)) })).filter((p) => p.songIds.length);
+  state.playlists = (lib?.playlists || []).map((p) => ({ ...p, songIds: (p.songIds || []).filter((id) => have.has(id)) })).filter((p) => p.songIds.length);
   $('#login').hidden = true;
   $('#app').hidden = false;
   showOfflineBar();
@@ -1813,4 +1826,7 @@ async function boot() {
 }
 
 if ('serviceWorker' in navigator && !BUNDLED) navigator.serviceWorker.register('/sw.js').catch(() => {});
+window.addEventListener('online', () => {
+  if (state.offline && BUNDLED && !LOCAL) location.reload(); // volvió la conexión: reintentar solo
+});
 boot();
