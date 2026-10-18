@@ -9,6 +9,9 @@ on:
     branches: [main, master]
     paths: ['android-app/**', 'public/**', '.github/workflows/build-apk.yml']
 
+permissions:
+  contents: write
+
 jobs:
   apk:
     runs-on: ubuntu-latest
@@ -49,3 +52,13 @@ jobs:
           name: sonora-apk
           path: android-app/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+      # Deja el APK como archivo público: https://github.com/<usuario>/<repo>/releases/download/apk/Sonora.apk
+      - name: Publicar el APK en Releases
+        working-directory: ${{ github.workspace }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cp android-app/android/app/build/outputs/apk/debug/app-debug.apk Sonora.apk
+          gh release view apk >/dev/null 2>&1 || gh release create apk --prerelease --title "Sonora para Android (APK)" --notes "Descarga Sonora.apk e instálalo en el celular." --target "${{ github.sha }}"
+          gh release upload apk Sonora.apk --clobber
