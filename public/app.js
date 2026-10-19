@@ -1749,6 +1749,80 @@ async function startOffline() {
   return true;
 }
 
+/* ============ Buscar sola la computadora en la red Wi-Fi ============ */
+
+const isLanUrl = (u) => /^http:\/\/(\d+\.){3}\d+/.test(u || '');
+let discovering = false;
+
+function discoverBar(text) {
+  let bar = $('#discoverBar');
+  if (!text) return bar?.setAttribute('hidden', '');
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'discoverBar';
+    bar.className = 'offline-bar';
+    bar.innerHTML = '<span></span>';
+    $('.topbar').after(bar);
+  }
+  bar.hidden = false;
+  bar.firstChild.textContent = text;
+}
+
+function connectToPc(url) {
+  try {
+    localStorage.removeItem('sonora.local');
+    localStorage.setItem('sonora.server', url);
+    localStorage.setItem('sonora.lastPc', url);
+  } catch {
+    /* sin almacenamiento */
+  }
+  location.reload();
+}
+
+// En el celular: si no hay conexión con la computadora (o nunca se conectó), la busca en el Wi-Fi.
+async function discoverPc() {
+  if (!BUNDLED || discovering || !window.Discover || navigator.onLine === false || !wifiOk()) return;
+  if (BASE && !isLanUrl(BASE)) return; // si usa un servidor en la nube, no se cambia
+  if (Date.now() - Number(lsRaw('sonora.lastScan') || 0) < 90000) return; // como máximo una búsqueda cada 90 s
+  discovering = true;
+  try {
+    localStorage.setItem('sonora.lastScan', String(Date.now()));
+  } catch {
+    /* sin almacenamiento */
+  }
+  discoverBar('Buscando tu computadora en la red…');
+  try {
+    const url = await window.Discover.find({
+      hint: BASE || lsRaw('sonora.lastPc'),
+      onProgress: (pct) => discoverBar(`Buscando tu computadora en la red… ${pct}%`)
+    });
+    discoverBar('');
+    if (!url || url === BASE) return;
+    if (LOCAL) {
+      if (Date.now() - Number(lsRaw('sonora.pcDeclined') || 0) < 7 * 86400000) return;
+      const ok = await confirmSheet({
+        title: 'Encontré tu Sonora',
+        text: `Tu Sonora está encendida en tu computadora (${url.replace(/^http:\/\//, '')}). ¿Conectar? Tus canciones del celular se enviarán a ella.`,
+        confirm: 'Conectar',
+        danger: false
+      });
+      if (!ok) {
+        try {
+          localStorage.setItem('sonora.pcDeclined', String(Date.now()));
+        } catch {
+          /* sin almacenamiento */
+        }
+        return;
+      }
+    }
+    toast('Conectando con tu computadora…');
+    connectToPc(url);
+  } finally {
+    discovering = false;
+    discoverBar('');
+  }
+}
+
 async function announceLocal() {
   if (!BUNDLED || LOCAL || !window.LocalLib || state.offline) return;
   try {
@@ -1778,6 +1852,13 @@ async function start() {
   try {
     const [songs, playlists] = await Promise.all([api('/songs'), api('/playlists')]);
     state.offline = false;
+    if (isLanUrl(BASE)) {
+      try {
+        localStorage.setItem('sonora.lastPc', BASE);
+      } catch {
+        /* sin almacenamiento */
+      }
+    }
     $('#offlineBar')?.setAttribute('hidden', '');
     setSongs(songs);
     state.playlists = playlists;
@@ -1802,6 +1883,7 @@ async function startLocal() {
   $('#login').hidden = true;
   $('#app').hidden = false;
   finishStart();
+  discoverPc();
 }
 
 async function boot() {
@@ -1816,7 +1898,12 @@ async function boot() {
   try {
     session = await (await fetch(`${BASE}/api/session`, authInit({ credentials: 'same-origin' }))).json();
   } catch {
-    if (await startOffline()) return finishStart();
+    if (await startOffline()) {
+      finishStart();
+      discoverPc();
+      return;
+    }
+    discoverPc();
     return showFatal('No se pudo conectar con tu servidor Sonora. Revisa que esté encendido y que tengas internet o estés en la misma red.');
   }
   state.authRequired = session.authRequired;
@@ -1828,5 +1915,10 @@ async function boot() {
 if ('serviceWorker' in navigator && !BUNDLED) navigator.serviceWorker.register('/sw.js').catch(() => {});
 window.addEventListener('online', () => {
   if (state.offline && BUNDLED && !LOCAL) location.reload(); // volvió la conexión: reintentar solo
+  else if (LOCAL) discoverPc();
+});
+// Cambió la red (por ejemplo, se conectó a otro Wi-Fi): volver a buscar la computadora.
+navigator.connection?.addEventListener?.('change', () => {
+  if (BUNDLED && (LOCAL || state.offline)) setTimeout(discoverPc, 1500);
 });
 boot();

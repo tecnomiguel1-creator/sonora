@@ -178,7 +178,7 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: '100kb' }));
 
 app.get('/api/session', (req, res) => {
-  res.json({ authRequired: !!PASSWORD, authed: isAuthed(req), maxMb: MAX_MB });
+  res.json({ app: 'sonora', authRequired: !!PASSWORD, authed: isAuthed(req), maxMb: MAX_MB });
 });
 
 app.post('/api/login', (req, res) => {
@@ -201,7 +201,7 @@ app.post('/api/logout', (req, res) => {
 
 // La app del celular lleva una copia de la pantalla, pero al abrirse con conexión baja de aquí la versión
 // más reciente (así los cambios de diseño llegan sin reinstalar el APK).
-const UI_FILES = ['index.html', 'styles.css', 'offline.js', 'audio-fx.js', 'local.js', 'app.js'];
+const UI_FILES = ['index.html', 'styles.css', 'offline.js', 'audio-fx.js', 'local.js', 'discover.js', 'app.js'];
 let uiCache = { key: '', body: null };
 app.get('/ui-bundle.json', (req, res) => {
   try {

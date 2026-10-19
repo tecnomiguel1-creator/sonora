@@ -1,7 +1,7 @@
 // Service worker de Sonora: guarda la "cáscara" de la app para que abra al instante.
 // La música y la API nunca se guardan aquí: siempre vienen de tu servidor.
-const CACHE = 'sonora-v3';
-const SHELL = ['/', '/styles.css', '/app.js', '/offline.js', '/audio-fx.js', '/local.js', '/manifest.webmanifest', '/icons/icon.svg', '/icons/icon-192.png', '/icons/icon-512.png'];
+const CACHE = 'sonora-v4';
+const SHELL = ['/', '/styles.css', '/app.js', '/offline.js', '/audio-fx.js', '/local.js', '/discover.js', '/manifest.webmanifest', '/icons/icon.svg', '/icons/icon-192.png', '/icons/icon-512.png'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)).then(() => self.skipWaiting()));

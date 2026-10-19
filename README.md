@@ -59,6 +59,17 @@ En la pantalla de inicio de la app de Android pulsa **Usar solo en este celular*
 - Para ver las mismas canciones en la PC hace falta un servidor (la PC con `iniciar.bat` o la nube). Desde **Subir música → Conectar con un servidor** puedes pasar a ese modo cuando quieras. Al conectarte, **las canciones que solo estaban en el celular se envían solas al servidor** (y también cada vez que abras la app, si quedó alguna pendiente). Siguen guardadas en el celular y conservan sus favoritas. Si abres la app **sin conexión con la PC** (otra red, PC apagada), verás las canciones guardadas en el celular y también puedes añadir música nueva: queda en el celular y se envía sola cuando vuelvas a conectar.
 - Sin servidor, las mejoras de la pantalla llegan solas desde GitHub al abrir la app con internet.
 
+## El celular encuentra solo la computadora
+
+Con Sonora encendida en la PC (`iniciar.bat`) y el celular en el mismo Wi-Fi, la app del celular la busca sola en la red:
+
+- **Primera vez:** la pantalla de inicio busca tu Sonora automáticamente y se conecta.
+- **Modo «solo en este celular»:** al abrir la app (y cuando cambia el Wi-Fi) la busca en segundo plano; si la encuentra, te pregunta «Encontré tu Sonora, ¿conectar?» y al aceptar envía tus canciones del celular a la PC.
+- **Ya conectada:** si la PC cambia de dirección (el router le da otra), la app la vuelve a encontrar sola y se reconecta.
+- No cambia de servidor si usas uno en la nube, y no busca con datos móviles.
+
+Reconoce a Sonora por su respuesta (`/api/session`), así que no se confunde con otros aparatos de la red. Busca en las redes de casa más comunes (192.168.0.x, 192.168.1.x, 10.0.0.x…) y en la del propio celular si el sistema la deja ver.
+
 ## Sonido y funciones extra
 
 Toca el botón de **ajustes de sonido** (el de las rayitas, junto al volumen en la PC, o arriba en la pantalla del reproductor en el celular):

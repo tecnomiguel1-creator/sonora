@@ -28,7 +28,7 @@
 
   // Sin servidor (modo "solo en este celular"): las pantallas nuevas se bajan del repositorio de GitHub.
   var GH = 'tecnomiguel1-creator/sonora';
-  var FILES = ['index.html', 'styles.css', 'offline.js', 'audio-fx.js', 'local.js', 'app.js'];
+  var FILES = ['index.html', 'styles.css', 'offline.js', 'audio-fx.js', 'local.js', 'discover.js', 'app.js'];
   function timed(url, ms, opts, asText) {
     var ctrl = new AbortController();
     var timer = setTimeout(function () { ctrl.abort(); }, ms);
@@ -66,6 +66,7 @@
     var css = blobUrl(f['styles.css'], 'text/css');
     var off = blobUrl(f['offline.js'], 'text/javascript');
     var app = blobUrl(f['app.js'], 'text/javascript');
+    var dis = f['discover.js'] ? blobUrl(f['discover.js'], 'text/javascript') : '';
     var loc = f['local.js'] ? blobUrl(f['local.js'], 'text/javascript') : '';
     var fx = f['audio-fx.js'] ? blobUrl(f['audio-fx.js'], 'text/javascript') : '';
     var html = f['index.html']
@@ -73,6 +74,7 @@
       .replace('href="/styles.css"', 'href="' + css + '"')
       .replace('<script src="/offline.js"><\/script>', '<script src="bundle-config.js"><\/script>\n<script src="' + off + '"><\/script>')
       .replace('<script src="/audio-fx.js"><\/script>', fx ? '<script src="' + fx + '"><\/script>' : '')
+      .replace('<script src="/discover.js"><\/script>', dis ? '<script src="' + dis + '"><\/script>' : '')
       .replace('<script src="/local.js"><\/script>', loc ? '<script src="' + loc + '"><\/script>' : '')
       .replace('<script type="module" src="/app.js"><\/script>', '<script type="module" src="' + app + '"><\/script>')
       .replace(/(href|src)="\/(?!\/)/g, '$1="');

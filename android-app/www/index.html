@@ -68,6 +68,7 @@
   </section>
 </main>
 
+<script src="app/discover.js"></script>
 <script>
   var KEY = 'sonora.server';
   var $ = function (id) { return document.getElementById(id); };
@@ -115,62 +116,27 @@
   }
 
 
-  // ---- Búsqueda automática en la red local ----
-  var PORT = 3000;
-  var PREFIXES = ['192.168.0', '192.168.1', '192.168.100', '192.168.2', '192.168.137', '192.168.68', '10.0.0', '10.0.1', '172.20.10'];
+  // ---- Búsqueda automática en la red local (usa app/discover.js) ----
   var scanToken = 0;
-
-  function probe(url, ms) {
-    var ctrl = new AbortController();
-    var timer = setTimeout(function () { ctrl.abort(); }, ms);
-    return fetch(url + '/api/session', { mode: 'no-cors', cache: 'no-store', signal: ctrl.signal })
-      .then(function () { return true; }, function () { return false; })
-      .then(function (ok) { clearTimeout(timer); return ok; });
-  }
-
-  // Devuelve una promesa con la URL encontrada (o '' si no hay).
-  function scanNetwork(prefixes, port, onProgress, token) {
-    var hosts = [];
-    prefixes.forEach(function (pre) { for (var i = 1; i <= 254; i++) hosts.push('http://' + pre + '.' + i + ':' + port); });
-    var total = hosts.length, next = 0, done = 0, found = '';
-    return new Promise(function (resolve) {
-      function worker() {
-        if (found || token !== scanToken || next >= total) { if (--running === 0) resolve(found); return; }
-        var url = hosts[next++];
-        probe(url, 1300).then(function (ok) {
-          done++;
-          if (ok && !found) found = url;
-          onProgress(Math.round(done * 100 / total));
-          worker();
-        });
-      }
-      var running = 40;
-      for (var w = 0; w < 40; w++) worker();
-    });
-  }
-
-  function prefixesFor(savedUrl) {
-    var list = PREFIXES.slice();
-    var m = /^https?:\/\/(\d+\.\d+\.\d+)\.\d+/.exec(savedUrl || '');
-    if (m) { list = [m[1]].concat(list.filter(function (x) { return x !== m[1]; })); }
-    return list;
-  }
+  var lastPc = '';
+  try { lastPc = localStorage.getItem('sonora.lastPc') || ''; } catch (e) {}
 
   function autoSearch() {
+    if (!window.Discover) { $('autoMsg').textContent = 'No se pudo iniciar la búsqueda. Escribe la dirección a mano.'; return Promise.resolve(); }
     var token = ++scanToken;
     var btn = $('auto'), msg = $('autoMsg');
-    var pm = /:(\d+)\/?$/.exec(saved || '');
-    var port = pm ? +pm[1] : PORT;
     btn.disabled = true;
     btn.textContent = 'Buscando…';
     msg.textContent = 'Buscando tu Sonora en la red… 0%';
-    return scanNetwork(prefixesFor(saved), port, function (pct) {
-      if (token === scanToken) msg.textContent = 'Buscando tu Sonora en la red… ' + pct + '%';
-    }, token).then(function (url) {
+    return window.Discover.find({
+      hint: saved || lastPc,
+      onProgress: function (pct) { if (token === scanToken) msg.textContent = 'Buscando tu Sonora en la red… ' + pct + '%'; },
+      shouldStop: function () { return token !== scanToken; }
+    }).then(function (url) {
       if (token !== scanToken) return;
       btn.disabled = false;
       btn.textContent = 'Buscar mi Sonora automáticamente';
-      if (url) { msg.textContent = 'Encontrada. Abriendo…'; open(url); }
+      if (url) { msg.textContent = 'Encontrada. Abriendo…'; try { localStorage.setItem('sonora.lastPc', url); } catch (e) {} open(url); }
       else {
         msg.textContent = 'No la encontré. Revisa que Sonora esté abierta en la computadora y que el celular esté en el mismo Wi-Fi (no con datos móviles). Puedes escribir la dirección a mano.';
       }
@@ -180,6 +146,7 @@
 
   // Modo sin servidor: la biblioteca vive dentro del celular.
   $('local').addEventListener('click', function () {
+    scanToken++; // cancela la búsqueda en curso
     try {
       localStorage.removeItem(KEY);
       localStorage.removeItem('sonora.token');
@@ -210,6 +177,7 @@
   } else {
     $('addr').value = saved.replace(/^https?:\/\//, '');
     show('setup');
+    if (!params.has('cambiar')) autoSearch(); // primera vez: busca sola la computadora
   }
 </script>
 </body>
